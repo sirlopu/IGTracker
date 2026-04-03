@@ -1,5 +1,6 @@
 // src/App.jsx
 import { useState, useEffect } from 'react'
+import logoUrl from './assets/logo.png'
 import Sidebar from './components/Sidebar'
 import ConnectPage from './pages/ConnectPage'
 import DashboardPage from './pages/DashboardPage'
@@ -68,7 +69,7 @@ export default function App() {
   if (loading) {
     return (
       <div className={styles.splash}>
-        <img src="/logo.png" alt="IGTracker" className={styles.splashLogo} />
+        <img src={logoUrl} alt="IGTracker" className={styles.splashLogo} />
       </div>
     )
   }
@@ -87,6 +88,7 @@ export default function App() {
         onRemoveAccount={removeAccount}
         theme={theme}
         onToggleTheme={toggleTheme}
+        logoUrl={logoUrl}
       />
       <main className={styles.main}>
         {page === 'connect' && <ConnectPage onAdd={addAccount} />}
