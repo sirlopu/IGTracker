@@ -1,0 +1,66 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0b0b0e;
+  --bg2:      #111115;
+  --bg3:      #18181e;
+  --bg4:      #202028;
+  --bg5:      #28282f;
+  --border:   rgba(255,255,255,0.06);
+  --border2:  rgba(255,255,255,0.11);
+  --border3:  rgba(255,255,255,0.2);
+  --text:     #f0f0f4;
+  --text2:    #a0a0b0;
+  --text3:    #606070;
+  --pink:     #e84080;
+  --pink2:    #ff6aaa;
+  --pink-dim: rgba(232,64,128,0.1);
+  --pink-glow:rgba(232,64,128,0.18);
+  --green:    #34d27a;
+  --green-dim:rgba(52,210,122,0.1);
+  --red:      #f25040;
+  --red-dim:  rgba(242,80,64,0.1);
+  --gold:     #f0b030;
+  --gold-dim: rgba(240,176,48,0.08);
+  --blue:     #4898f8;
+  --blue-dim: rgba(72,152,248,0.1);
+  --purple:   #9b6ff0;
+  --purple-dim:rgba(155,111,240,0.1);
+  --r:        10px;
+  --rs:       7px;
+  --rl:       14px;
+
+  /* Font roles */
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-ui:      'Inter', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg5); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border3); }
+
+/* Selection */
+::selection { background: var(--pink-dim); color: var(--pink2); }
+
+/* Focus ring */
+:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; border-radius: var(--rs); }
+
+button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; }
+a { color: inherit; text-decoration: none; }

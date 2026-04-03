@@ -1,0 +1,82 @@
+/* src/pages/ScanPage.module.css */
+.page { padding: 36px; max-width: 680px; }
+.hdr { margin-bottom: 28px; }
+.eyebrow { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+.title { font-size: 26px; font-weight: 800; letter-spacing: -.3px; margin-bottom: 8px; font-family: var(--font-display); line-height: 1.2; }
+.sub { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+.typeSel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+.typeBtn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px;
+  background: var(--bg2); border: 1.5px solid var(--border2);
+  border-radius: var(--r); cursor: pointer; text-align: left;
+  transition: border-color .15s, background .15s;
+  color: var(--text);
+}
+.typeBtn:hover { border-color: var(--border3); background: var(--bg3); }
+.typeActive { border-color: var(--pink) !important; background: var(--pink-dim) !important; }
+.typeBtnIcon { width: 36px; height: 36px; border-radius: var(--rs); background: var(--bg3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.typeActive .typeBtnIcon { background: rgba(232,64,128,.2); }
+.typeBtnLabel { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+.typeBtnCount { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); }
+
+.bigScanBtn {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%; padding: 16px;
+  background: var(--pink); border: none; border-radius: var(--r);
+  color: white; font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: background .15s, transform .1s;
+  margin-bottom: 24px;
+}
+.bigScanBtn:hover { background: #cf3168; }
+.bigScanBtn:active { transform: scale(.98); }
+
+.progressCard {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
+  padding: 22px; margin-bottom: 24px;
+}
+.progressTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.progressLabel { font-size: 13px; font-weight: 600; }
+.progressCount { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--pink); }
+.progressBar { height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-bottom: 12px; }
+.progressFill { height: 100%; background: linear-gradient(90deg, var(--pink), var(--purple)); border-radius: 2px; transition: width .4s ease; }
+.progressHint { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
+
+.errorCard {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--red-dim); border: 1px solid rgba(242,80,64,.25); border-radius: var(--r);
+  padding: 18px 20px; margin-bottom: 24px;
+}
+.errorTitle { font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 3px; }
+.errorMsg { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--text2); }
+.retryBtn { margin-left: auto; padding: 7px 14px; background: transparent; border: 1px solid var(--red); border-radius: var(--rs); color: var(--red); font-size: 12px; cursor: pointer; }
+.retryBtn:hover { background: var(--red-dim); }
+
+.resultCard {
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
+  padding: 22px; margin-bottom: 24px;
+  border-color: rgba(52,210,122,.3);
+}
+.resultHdr { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.resultTitle { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.resultSub { font-size: 12px; color: var(--text2); font-family: 'DM Mono', monospace; }
+.diffRow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.diffBadge { font-size: 12px; font-family: 'DM Mono', monospace; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+.diffGained { background: var(--green-dim); color: var(--green); }
+.diffLost { background: var(--red-dim); color: var(--red); }
+.diffNet { font-size: 12px; font-family: 'DM Mono', monospace; font-weight: 600; margin-left: 4px; }
+.firstScan { font-size: 12px; color: var(--text2); font-family: 'DM Mono', monospace; margin-bottom: 18px; }
+.resultActions { display: flex; gap: 10px; }
+.resultBtn { padding: 9px 16px; background: transparent; border: 1px solid var(--border2); border-radius: var(--rs); color: var(--text2); font-size: 12px; cursor: pointer; }
+.resultBtn:hover { border-color: var(--border3); color: var(--text); }
+.resultBtnPrimary { padding: 9px 16px; background: var(--pink); border: none; border-radius: var(--rs); color: white; font-size: 12px; font-weight: 700; cursor: pointer; }
+.resultBtnPrimary:hover { background: #cf3168; }
+
+.infoCard { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 20px; }
+.infoTitle { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 16px; }
+.infoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.infoItem { display: flex; align-items: flex-start; gap: 10px; }
+.infoItemIcon { font-size: 18px; flex-shrink: 0; }
+.infoItemTitle { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.infoItemDesc { font-size: 12px; color: var(--text2); line-height: 1.5; }

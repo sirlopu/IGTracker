@@ -1,0 +1,55 @@
+/* src/pages/EventsPage.module.css */
+.page { padding: 36px; max-width: 720px; }
+.hdr { margin-bottom: 24px; }
+.eyebrow { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
+.title { font-size: 26px; font-weight: 800; letter-spacing: -.3px; margin-bottom: 8px; font-family: var(--font-display); line-height: 1.2; }
+.sub { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+.chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; background: var(--bg2);
+  border: 1px solid var(--border2); border-radius: 20px;
+  color: var(--text3); font-size: 12px; font-family: 'DM Mono', monospace;
+  cursor: pointer; transition: all .15s;
+}
+.chip:hover { border-color: var(--border3); color: var(--text2); }
+.chipActive { background: var(--bg3) !important; border-color: var(--border3) !important; color: var(--text) !important; }
+.chipCount { opacity: .6; font-size: 10px; }
+
+.searchBar { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r); padding: 10px 14px; margin-bottom: 20px; }
+.searchInput { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; }
+.searchInput::placeholder { color: var(--text3); }
+.clearBtn { background: transparent; border: none; color: var(--text3); font-size: 16px; cursor: pointer; }
+.clearBtn:hover { color: var(--text); }
+
+.loading { font-size: 13px; color: var(--text3); font-family: 'DM Mono', monospace; padding: 40px 0; text-align: center; }
+.empty { font-size: 13px; color: var(--text3); font-family: 'DM Mono', monospace; padding: 40px 0; text-align: center; line-height: 1.6; }
+
+.group { margin-bottom: 24px; }
+.groupDate {
+  font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: 8px; padding: 0 2px;
+}
+.groupList { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+
+.eventRow {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+.eventRow:last-child { border-bottom: none; }
+.eventRow:hover { background: var(--bg3); }
+
+.eventIcon {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; font-family: 'DM Mono', monospace;
+}
+.eventInfo { flex: 1; display: flex; align-items: center; gap: 10px; }
+.eventUser { font-size: 13px; font-family: 'DM Mono', monospace; }
+.eventLabel { font-size: 11px; font-family: 'DM Mono', monospace; }
+.eventTime { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); }
+.extBtn { padding: 5px; background: transparent; border: none; color: var(--text3); cursor: pointer; border-radius: var(--rs); transition: color .1s, background .1s; }
+.extBtn:hover { color: var(--text); background: var(--bg4); }
