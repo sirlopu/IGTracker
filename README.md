@@ -91,3 +91,7 @@ npm run build
 - Session cookies live in your `userData` folder only
 - The DB is a local file you fully control
 - For accounts you own only — not for surveillance of others
+
+## License
+
+This project is licensed under the MIT License — see the LICENSE file for details.
