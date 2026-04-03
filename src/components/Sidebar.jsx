@@ -17,9 +17,7 @@ export default function Sidebar({ accounts, activeAccount, activePage, onNavigat
     <aside className={s.sidebar}>
       {/* Logo */}
       <div className={s.brand}>
-        <div className={s.brandMark}>
-          <IgIcon />
-        </div>
+        <img src="/logo.png" alt="IGTracker" className={s.brandMark} />
         <div className={s.brandText}>
           <span className={s.brandName}>IGTracker</span>
           <span className={s.brandTag}>Local · Private</span>
