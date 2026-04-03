@@ -14,6 +14,16 @@ export default function App() {
   const [activeAccount, setActiveAccount] = useState(null)
   const [page, setPage] = useState('connect') // connect | dashboard | scan | compare | relations | events
   const [loading, setLoading] = useState(true)
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  function toggleTheme() {
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }
 
   useEffect(() => {
     loadAccounts()
@@ -77,6 +87,8 @@ export default function App() {
         onAddAccount={() => setPage('connect')}
         onSwitchAccount={switchAccount}
         onRemoveAccount={removeAccount}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <main className={styles.main}>
         {page === 'connect' && <ConnectPage onAdd={addAccount} />}

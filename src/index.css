@@ -39,6 +39,27 @@
   --font-mono:    'DM Mono', monospace;
 }
 
+[data-theme="light"] {
+  --bg:       #f5f5f8;
+  --bg2:      #ededf2;
+  --bg3:      #e4e4eb;
+  --bg4:      #d8d8e2;
+  --bg5:      #ccccd8;
+  --border:   rgba(0,0,0,0.07);
+  --border2:  rgba(0,0,0,0.12);
+  --border3:  rgba(0,0,0,0.22);
+  --text:     #111118;
+  --text2:    #505060;
+  --text3:    #909099;
+  --pink-dim: rgba(232,64,128,0.08);
+  --pink-glow:rgba(232,64,128,0.14);
+  --green-dim:rgba(40,180,100,0.1);
+  --red-dim:  rgba(220,60,44,0.1);
+  --gold-dim: rgba(210,148,20,0.1);
+  --blue-dim: rgba(50,130,240,0.1);
+  --purple-dim:rgba(130,90,220,0.1);
+}
+
 html, body, #root {
   height: 100%;
   background: var(--bg);
