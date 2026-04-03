@@ -10,14 +10,14 @@ const NAV = [
   { id: 'events',     label: 'Events',      icon: ActivityIcon },
 ]
 
-export default function Sidebar({ accounts, activeAccount, activePage, onNavigate, onAddAccount, onSwitchAccount, onRemoveAccount, theme, onToggleTheme }) {
+export default function Sidebar({ accounts, activeAccount, activePage, onNavigate, onAddAccount, onSwitchAccount, onRemoveAccount, theme, onToggleTheme, logoUrl }) {
   const [showAccMenu, setShowAccMenu] = useState(false)
 
   return (
     <aside className={s.sidebar}>
       {/* Logo */}
       <div className={s.brand}>
-        <img src="/logo.png" alt="IGTracker" className={s.brandMark} />
+        <img src={logoUrl} alt="IGTracker" className={s.brandMark} />
         <div className={s.brandText}>
           <span className={s.brandName}>IGTracker</span>
           <span className={s.brandTag}>Local · Private</span>
