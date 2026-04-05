@@ -92,19 +92,15 @@ app.on('window-all-closed', () => {
 async function initDatabase() {
   const initSqlJs = require('sql.js')
 
-  // In dev, resolve from the project root node_modules.
-  // In production the app is inside an asar archive; app.getAppPath() returns
-  // the asar path which Electron's patched fs can read transparently.
-  // We read the binary ourselves (fs.readFileSync honours asar paths) and pass
-  // it as wasmBinary — this avoids Emscripten's internal fetch which can hang
-  // silently when given a bad path, causing the window to never appear.
-  const wasmPath = path.join(
-    isDev ? path.join(process.cwd(), 'node_modules') : path.join(app.getAppPath(), 'node_modules'),
-    'sql.js', 'dist', 'sql-wasm.wasm'
-  )
-  const wasmBinary = fs.readFileSync(wasmPath)
+  // In dev:        node_modules/sql.js/dist/sql-wasm.wasm (project root)
+  // In production: extraResources copies the wasm to Resources/sql-wasm.wasm,
+  //                accessible via process.resourcesPath — a plain filesystem
+  //                path that works regardless of asar packaging.
+  const wasmPath = isDev
+    ? path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+    : path.join(process.resourcesPath, 'sql-wasm.wasm')
 
-  const SQL = await initSqlJs({ wasmBinary })
+  const SQL = await initSqlJs({ locateFile: () => wasmPath })
 
   if (fs.existsSync(dbPath)) {
     const buf = fs.readFileSync(dbPath)
