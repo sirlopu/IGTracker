@@ -154,10 +154,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+.footerNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 .footerNote {
   display: flex; align-items: center; gap: 6px;
   font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace;
+}
+.footerBrand {
+  font-size: 9px;
+  font-family: 'DM Mono', monospace;
+  color: var(--text3);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .themeToggle {
   display: flex;

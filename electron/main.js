@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -36,11 +36,13 @@ async function createWindow() {
     if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' })
   })
 
-  // If Vite wasn't quite ready, retry once
+  // If Vite wasn't quite ready, retry once; in production show an error dialog
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
     console.error('Load failed:', code, desc)
     if (isDev) {
       setTimeout(() => mainWindow.loadURL('http://localhost:5173'), 2000)
+    } else {
+      dialog.showErrorBox('Failed to load app', `Error ${code}: ${desc}\n\nPlease reinstall the app.`)
     }
   })
 
@@ -70,6 +72,12 @@ async function waitForVite(url, retries = 40) {
 app.whenReady().then(async () => {
   try { await initDatabase() } catch (e) { console.error('DB init failed:', e.message) }
   await createWindow()
+
+  // Allow opening DevTools in production with Cmd/Ctrl+Shift+I for debugging
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    mainWindow?.webContents.toggleDevTools()
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -84,10 +92,13 @@ app.on('window-all-closed', () => {
 async function initDatabase() {
   const initSqlJs = require('sql.js')
 
-  const wasmPath = path.join(
-    isDev ? path.join(process.cwd(), 'node_modules') : process.resourcesPath,
-    'sql.js', 'dist', 'sql-wasm.wasm'
-  )
+  // In dev:        node_modules/sql.js/dist/sql-wasm.wasm (project root)
+  // In production: extraResources copies the wasm to Resources/sql-wasm.wasm,
+  //                accessible via process.resourcesPath — a plain filesystem
+  //                path that works regardless of asar packaging.
+  const wasmPath = isDev
+    ? path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+    : path.join(process.resourcesPath, 'sql-wasm.wasm')
 
   const SQL = await initSqlJs({ locateFile: () => wasmPath })
 

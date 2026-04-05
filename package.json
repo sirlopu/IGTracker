@@ -29,6 +29,9 @@
     "icon": "assets/icons/icon",
     "directories": { "output": "dist-electron" },
     "files": ["electron/**/*", "dist/**/*"],
+    "extraResources": [
+      { "from": "node_modules/sql.js/dist/sql-wasm.wasm", "to": "sql-wasm.wasm" }
+    ],
     "mac": { "category": "public.app-category.utilities", "icon": "assets/icons/icon.icns" },
     "win": { "target": "nsis", "icon": "assets/icons/icon.ico" },
     "linux": { "target": "AppImage", "icon": "assets/icons/icon.png" }
