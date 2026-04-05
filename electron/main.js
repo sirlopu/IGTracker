@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -36,11 +36,13 @@ async function createWindow() {
     if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' })
   })
 
-  // If Vite wasn't quite ready, retry once
+  // If Vite wasn't quite ready, retry once; in production show an error dialog
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
     console.error('Load failed:', code, desc)
     if (isDev) {
       setTimeout(() => mainWindow.loadURL('http://localhost:5173'), 2000)
+    } else {
+      dialog.showErrorBox('Failed to load app', `Error ${code}: ${desc}\n\nPlease reinstall the app.`)
     }
   })
 
@@ -70,6 +72,12 @@ async function waitForVite(url, retries = 40) {
 app.whenReady().then(async () => {
   try { await initDatabase() } catch (e) { console.error('DB init failed:', e.message) }
   await createWindow()
+
+  // Allow opening DevTools in production with Cmd/Ctrl+Shift+I for debugging
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    mainWindow?.webContents.toggleDevTools()
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -84,12 +92,19 @@ app.on('window-all-closed', () => {
 async function initDatabase() {
   const initSqlJs = require('sql.js')
 
+  // In dev, resolve from the project root node_modules.
+  // In production the app is inside an asar archive; app.getAppPath() returns
+  // the asar path which Electron's patched fs can read transparently.
+  // We read the binary ourselves (fs.readFileSync honours asar paths) and pass
+  // it as wasmBinary — this avoids Emscripten's internal fetch which can hang
+  // silently when given a bad path, causing the window to never appear.
   const wasmPath = path.join(
-    isDev ? path.join(process.cwd(), 'node_modules') : process.resourcesPath,
+    isDev ? path.join(process.cwd(), 'node_modules') : path.join(app.getAppPath(), 'node_modules'),
     'sql.js', 'dist', 'sql-wasm.wasm'
   )
+  const wasmBinary = fs.readFileSync(wasmPath)
 
-  const SQL = await initSqlJs({ locateFile: () => wasmPath })
+  const SQL = await initSqlJs({ wasmBinary })
 
   if (fs.existsSync(dbPath)) {
     const buf = fs.readFileSync(dbPath)

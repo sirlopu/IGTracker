@@ -86,9 +86,12 @@ export default function Sidebar({ accounts, activeAccount, activePage, onNavigat
 
       {/* Footer */}
       <div className={s.footer}>
-        <div className={s.footerNote}>
-          <LockIcon />
-          <span>All data stored locally</span>
+        <div className={s.footerNotes}>
+          <div className={s.footerNote}>
+            <LockIcon />
+            <span>All data stored locally</span>
+          </div>
+          <span className={s.footerBrand}>Developed by TechCatalyst</span>
         </div>
         <button className={s.themeToggle} onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
