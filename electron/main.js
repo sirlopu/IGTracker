@@ -6,8 +6,11 @@ const fs = require('fs')
 // Reliable dev detection — set explicitly by the npm script
 const isDev = process.env.ELECTRON_DEV === '1'
 
-const userDataPath = app.getPath('userData')
-const dbPath = path.join(userDataPath, 'igtracker.db')
+// Resolved inside app.whenReady() — app.getPath() must not be called at
+// module load time; on some systems it returns a stale/wrong value before
+// the app is fully initialised.
+let userDataPath
+let dbPath
 
 let mainWindow
 let db
@@ -70,7 +73,31 @@ async function waitForVite(url, retries = 40) {
 }
 
 app.whenReady().then(async () => {
-  try { await initDatabase() } catch (e) { console.error('DB init failed:', e.message) }
+  // Resolve paths now that Electron is fully ready
+  userDataPath = app.getPath('userData')
+  dbPath = path.join(userDataPath, 'igtracker.db')
+
+  // Guarantee the user-data directory exists on first run
+  fs.mkdirSync(userDataPath, { recursive: true })
+
+  try {
+    // 15-second timeout guards against Emscripten hanging silently when
+    // the wasm file is missing or unreadable — without it the window
+    // would never appear.
+    await Promise.race([
+      initDatabase(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Database initialisation timed out')), 15000)
+      ),
+    ])
+  } catch (e) {
+    console.error('DB init failed:', e.message)
+    dialog.showErrorBox(
+      'Database error',
+      `IGTracker could not initialise its database:\n\n${e.message}\n\nThe app will open but data will not be saved.`
+    )
+  }
+
   await createWindow()
 
   // Allow opening DevTools in production with Cmd/Ctrl+Shift+I for debugging
@@ -167,8 +194,13 @@ function camelRow(row) {
   return out
 }
 
+function dbReady() {
+  if (!db) throw new Error('Database is not available. Please restart the app.')
+}
+
 function all(sql, params = []) {
   try {
+    dbReady()
     const stmt = db.prepare(sql)
     stmt.bind(params)
     const rows = []
@@ -179,6 +211,7 @@ function all(sql, params = []) {
 }
 function get(sql, params = []) { return all(sql, params)[0] || null }
 function run(sql, params = []) {
+  dbReady()
   db.run(sql, params)
   return db.exec('SELECT last_insert_rowid() as id')[0]?.values[0][0]
 }
@@ -289,13 +322,35 @@ ipcMain.handle('export:csv', async (_, { snapshotId, filename }) => {
 ipcMain.handle('shell:openExternal', (_, url) => shell.openExternal(url))
 
 // ─── PLAYWRIGHT SCANNING ────────────────────────────────────────────────────
-ipcMain.handle('scan:followers', (_, { username }) => runScan(username, 'followers'))
-ipcMain.handle('scan:following', (_, { username }) => runScan(username, 'following'))
+// scan:launch is the entry point exposed in the preload — it dispatches
+// to the correct handler based on the type field in the payload.
+ipcMain.handle('scan:launch',    (_, { username, type }) => runScan(username, type))
+ipcMain.handle('scan:followers', (_, { username })       => runScan(username, 'followers'))
+ipcMain.handle('scan:following', (_, { username })       => runScan(username, 'following'))
 
 async function runScan(username, type) {
-  const { chromium } = require('playwright')
+  // Verify Playwright's Chromium is available before doing anything else.
+  // On a fresh install the browser binaries are not bundled with the app —
+  // give the user a clear, actionable message instead of a cryptic crash.
+  let chromium
+  try {
+    chromium = require('playwright').chromium
+    // executablePath() throws if the browser has never been installed
+    const execPath = chromium.executablePath()
+    if (!fs.existsSync(execPath)) throw new Error('not found')
+  } catch (_) {
+    return {
+      error:
+        'Chromium browser not found.\n\n' +
+        'Please run the following command once and restart the app:\n\n' +
+        '    npx playwright install chromium',
+    }
+  }
+
   const sessionPath = path.join(userDataPath, `session_${username}`)
-  fs.mkdirSync(sessionPath, { recursive: true })
+  try { fs.mkdirSync(sessionPath, { recursive: true }) } catch (e) {
+    return { error: `Could not create session directory: ${e.message}` }
+  }
 
   // Remove stale Chromium lock files left by a previous crashed session
   for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
