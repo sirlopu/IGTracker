@@ -9,6 +9,13 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    globals: true,
+    include: ['src/**/*.test.{js,jsx}'],
+    exclude: ['.claude/**', 'dist/**', 'dist-electron/**', 'node_modules/**'],
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
