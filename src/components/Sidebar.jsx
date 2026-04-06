@@ -31,7 +31,10 @@ export default function Sidebar({ accounts, activeAccount, activePage, onNavigat
             {activeAccount ? activeAccount.username.slice(0, 2).toUpperCase() : '??'}
           </div>
           <div className={s.accountInfo}>
-            <span className={s.accountName}>
+            <span
+              className={s.accountName}
+              title={activeAccount ? `@${activeAccount.username}` : 'No account'}
+            >
               {activeAccount ? `@${activeAccount.username}` : 'No account'}
             </span>
             <span className={s.accountSub}>
@@ -50,7 +53,7 @@ export default function Sidebar({ accounts, activeAccount, activePage, onNavigat
                   onClick={() => { onSwitchAccount(acc); setShowAccMenu(false) }}
                 >
                   <div className={s.miniAvatar}>{acc.username.slice(0, 2).toUpperCase()}</div>
-                  @{acc.username}
+                  <span className={s.accSwitchLabel} title={`@${acc.username}`}>@{acc.username}</span>
                 </button>
                 <button className={s.accDelete} onClick={() => onRemoveAccount(acc.id)} title="Remove">
                   ×

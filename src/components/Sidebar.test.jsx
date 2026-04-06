@@ -61,4 +61,38 @@ describe('Sidebar', () => {
 
     expect(onToggleTheme).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps the remove button usable for long usernames', async () => {
+    const user = userEvent.setup()
+    const onRemoveAccount = vi.fn()
+
+    renderSidebar({
+      accounts: [
+        { id: 1, username: 'codeninjaschinohills' },
+        { id: 2, username: 'gabesbestlife' },
+      ],
+      activeAccount: { id: 1, username: 'codeninjaschinohills' },
+      onRemoveAccount,
+    })
+
+    await user.click(screen.getByRole('button', { name: /@codeninjaschinohills/i }))
+    await user.click(screen.getAllByTitle('Remove')[0])
+
+    expect(onRemoveAccount).toHaveBeenCalledWith(1)
+  })
+
+  it('shows the full username as a tooltip when it is truncated', async () => {
+    const user = userEvent.setup()
+
+    renderSidebar({
+      accounts: [{ id: 1, username: 'codeninjaschinohills' }],
+      activeAccount: { id: 1, username: 'codeninjaschinohills' },
+    })
+
+    expect(screen.getByText('@codeninjaschinohills')).toHaveAttribute('title', '@codeninjaschinohills')
+
+    await user.click(screen.getByRole('button', { name: /@codeninjaschinohills/i }))
+
+    expect(screen.getAllByTitle('@codeninjaschinohills')).toHaveLength(2)
+  })
 })
