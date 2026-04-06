@@ -15,6 +15,7 @@ export default function App() {
   const [activeAccount, setActiveAccount] = useState(null)
   const [page, setPage] = useState('connect') // connect | dashboard | scan | compare | relations | events
   const [loading, setLoading] = useState(true)
+  const [dbError, setDbError] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export default function App() {
       }
     } catch (e) {
       console.error('Failed to load accounts:', e)
+      setDbError(true)
     } finally {
       setLoading(false)
     }
@@ -91,7 +93,7 @@ export default function App() {
         logoUrl={logoUrl}
       />
       <main className={styles.main}>
-        {page === 'connect' && <ConnectPage onAdd={addAccount} />}
+        {page === 'connect' && <ConnectPage onAdd={addAccount} dbError={dbError} />}
         {page === 'dashboard' && activeAccount && <DashboardPage {...pageProps} />}
         {page === 'scan' && activeAccount && <ScanPage {...pageProps} />}
         {page === 'compare' && activeAccount && <ComparePage {...pageProps} />}

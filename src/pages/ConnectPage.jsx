@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import s from './ConnectPage.module.css'
 
-export default function ConnectPage({ onAdd }) {
+export default function ConnectPage({ onAdd, dbError }) {
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -24,6 +24,20 @@ export default function ConnectPage({ onAdd }) {
   return (
     <div className={s.page}>
       <div className={s.wrap}>
+
+        {dbError && (
+          <div className={s.dbErrorBanner}>
+            <div className={s.dbErrorIcon}><AlertIcon /></div>
+            <div>
+              <div className={s.dbErrorTitle}>Database unavailable</div>
+              <div className={s.dbErrorBody}>
+                IGTracker could not initialise its local database. Your data cannot be saved until this is resolved.
+                Try <strong>restarting the app</strong>. If the problem persists, reinstall the application.
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className={s.hero}>
           <div className={s.heroIcon}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
@@ -55,7 +69,8 @@ export default function ConnectPage({ onAdd }) {
           <button
             className={s.btn}
             onClick={handleConnect}
-            disabled={loading}
+            disabled={loading || dbError}
+            title={dbError ? 'Database unavailable — restart the app' : undefined}
           >
             {loading ? 'Adding...' : 'Add account →'}
           </button>
@@ -92,4 +107,7 @@ export default function ConnectPage({ onAdd }) {
 
 function ShieldIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{flexShrink:0}}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+}
+function AlertIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 }
