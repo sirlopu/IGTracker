@@ -2,10 +2,11 @@
 import { useState } from 'react'
 import s from './ConnectPage.module.css'
 
-export default function ConnectPage({ onAdd, dbError }) {
+export default function ConnectPage({ onAdd, dbError, platform = 'electron' }) {
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const isWeb = platform === 'web'
 
   async function handleConnect() {
     const u = username.trim().replace(/^@/, '')
@@ -79,11 +80,11 @@ export default function ConnectPage({ onAdd, dbError }) {
         <div className={s.howItWorks}>
           <h3 className={s.hiwTitle}>How it works</h3>
           <div className={s.steps}>
-            {[
-              { n: '1', t: 'Add your username', d: 'No password needed here. Just your handle.' },
-              { n: '2', t: 'Scan followers', d: 'A browser window opens. You log in on Instagram\'s own site.' },
-              { n: '3', t: 'Session saved locally', d: 'Your login cookies stay on this device only.' },
-              { n: '4', t: 'Daily scans', d: 'One click re-scans and shows you exactly who changed.' },
+              {[
+                { n: '1', t: 'Add your username', d: 'No password needed here. Just your handle.' },
+              { n: '2', t: isWeb ? 'Import a list' : 'Scan followers', d: isWeb ? 'Paste or upload exported follower usernames from your browser.' : 'A browser window opens. You log in on Instagram\'s own site.' },
+              { n: '3', t: isWeb ? 'Save locally in your browser' : 'Session saved locally', d: isWeb ? 'Accounts, snapshots, and events stay in this browser only.' : 'Your login cookies stay on this device only.' },
+              { n: '4', t: 'Track changes', d: isWeb ? 'Import a fresh list later to see new followers, losses, and relationship changes.' : 'One click re-scans and shows you exactly who changed.' },
             ].map(step => (
               <div key={step.n} className={s.step}>
                 <div className={s.stepNum}>{step.n}</div>
@@ -98,7 +99,7 @@ export default function ConnectPage({ onAdd, dbError }) {
 
         <div className={s.privacyNote}>
           <ShieldIcon />
-          <span>Runs locally via Playwright. No credentials leave your machine. Not for scraping third-party accounts.</span>
+          <span>{isWeb ? 'Runs entirely in your browser with local storage. Import only data you control.' : 'Runs locally via Playwright. No credentials leave your machine. Not for scraping third-party accounts.'}</span>
         </div>
       </div>
     </div>

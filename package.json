@@ -5,9 +5,13 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:web": "vite",
     "dev:renderer": "vite",
     "dev:electron": "cross-env ELECTRON_DEV=1 electron .",
     "build": "vite build && electron-builder",
+    "build:web": "vite build",
+    "build:mac": "vite build && electron-builder --mac",
+    "build:mac:unsigned": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -49,7 +53,15 @@
     ],
     "mac": {
       "category": "public.app-category.utilities",
-      "icon": "assets/icons/icon.icns"
+      "icon": "assets/icons/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "target": "nsis",

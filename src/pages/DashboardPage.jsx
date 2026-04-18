@@ -1,6 +1,7 @@
 // src/pages/DashboardPage.jsx
 import { useState, useEffect } from 'react'
 import s from './DashboardPage.module.css'
+import { formatSystemDate, parseAppDate } from '../lib/datetime'
 
 export default function DashboardPage({ account, onNavigate }) {
   const [snapshots, setSnapshots] = useState([])
@@ -161,11 +162,11 @@ function fmt(n, sign = false) {
 }
 
 function fmtDate(dt) {
-  return new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatSystemDate(dt, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function fmtRelative(dt) {
-  const diff = Date.now() - new Date(dt).getTime()
+  const diff = Date.now() - parseAppDate(dt).getTime()
   const h = Math.floor(diff / 3600000)
   if (h < 1) return 'just now'
   if (h < 24) return `${h}h ago`

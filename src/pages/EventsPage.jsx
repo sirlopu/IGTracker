@@ -1,12 +1,14 @@
 // src/pages/EventsPage.jsx
 import { useState, useEffect } from 'react'
 import s from './EventsPage.module.css'
+import { formatSystemDate, formatSystemTime } from '../lib/datetime'
 
 const EVENT_META = {
   gained_follower: { label: 'Followed you',   color: 'var(--green)', bg: 'var(--green-dim)', icon: '+' },
   lost_follower:   { label: 'Unfollowed you', color: 'var(--red)',   bg: 'var(--red-dim)',   icon: '−' },
   new_following:   { label: 'You followed',   color: 'var(--blue)',  bg: 'var(--blue-dim)',  icon: '→' },
   unfollowed:      { label: 'You unfollowed', color: 'var(--gold)',  bg: 'var(--gold-dim)',  icon: '←' },
+  unfollow_failed: { label: 'Unfollow failed', color: 'var(--red)',  bg: 'var(--red-dim)',   icon: '!' },
 }
 
 export default function EventsPage({ account }) {
@@ -39,11 +41,12 @@ export default function EventsPage({ account }) {
     lost_follower:   events.filter(e => e.eventType === 'lost_follower').length,
     new_following:   events.filter(e => e.eventType === 'new_following').length,
     unfollowed:      events.filter(e => e.eventType === 'unfollowed').length,
+    unfollow_failed: events.filter(e => e.eventType === 'unfollow_failed').length,
   }
 
   // Group by date
   const grouped = filtered.reduce((acc, ev) => {
-    const day = new Date(ev.createdAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    const day = formatSystemDate(ev.createdAt, { weekday: 'long', month: 'long', day: 'numeric' })
     if (!acc[day]) acc[day] = []
     acc[day].push(ev)
     return acc
@@ -54,7 +57,19 @@ export default function EventsPage({ account }) {
       <div className={s.hdr}>
         <div className={s.eyebrow}>Events</div>
         <h1 className={s.title}>Activity feed</h1>
-        <p className={s.sub}>All follower changes detected across your scans.</p>
+        <p className={s.sub}>All follower changes and unfollow action results in one timeline.</p>
+      </div>
+
+      <div className={s.toolbar}>
+        <button
+          className={s.refreshBtn}
+          onClick={load}
+          disabled={loading}
+          title={loading ? 'Refreshing events' : 'Refresh events'}
+          aria-label={loading ? 'Refreshing events' : 'Refresh events'}
+        >
+          <RefreshIcon spinning={loading} />
+        </button>
       </div>
 
       {/* Filter chips */}
@@ -131,8 +146,26 @@ export default function EventsPage({ account }) {
 }
 
 function fmtTime(dt) {
-  return new Date(dt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  return formatSystemTime(dt, { hour: '2-digit', minute: '2-digit' })
 }
 
 function SearchIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0,color:'var(--text3)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> }
 function ExternalIcon() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> }
+function RefreshIcon({ spinning = false }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      style={spinning ? { animation: 'spin 1s linear infinite' } : undefined}
+    >
+      <path d="M21 2v6h-6" />
+      <path d="M3 12a9 9 0 0 1 15.55-6.36L21 8" />
+      <path d="M3 22v-6h6" />
+      <path d="M21 12a9 9 0 0 1-15.55 6.36L3 16" />
+    </svg>
+  )
+}

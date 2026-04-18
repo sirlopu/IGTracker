@@ -11,6 +11,7 @@ import EventsPage from './pages/EventsPage'
 import styles from './App.module.css'
 
 export default function App() {
+  const platform = window.api?.meta?.platform || 'web'
   const [accounts, setAccounts] = useState([])
   const [activeAccount, setActiveAccount] = useState(null)
   const [page, setPage] = useState('connect') // connect | dashboard | scan | compare | relations | events
@@ -93,14 +94,13 @@ export default function App() {
         logoUrl={logoUrl}
       />
       <main className={styles.main}>
-        {page === 'connect' && <ConnectPage onAdd={addAccount} dbError={dbError} />}
+        {page === 'connect' && <ConnectPage onAdd={addAccount} dbError={dbError} platform={platform} />}
         {page === 'dashboard' && activeAccount && <DashboardPage {...pageProps} />}
-        {page === 'scan' && activeAccount && <ScanPage {...pageProps} />}
+        {page === 'scan' && activeAccount && <ScanPage {...pageProps} platform={platform} />}
         {page === 'compare' && activeAccount && <ComparePage {...pageProps} />}
-        {page === 'relations' && activeAccount && <RelationsPage {...pageProps} />}
+        {page === 'relations' && activeAccount && <RelationsPage {...pageProps} platform={platform} />}
         {page === 'events' && activeAccount && <EventsPage {...pageProps} />}
       </main>
     </div>
   )
 }
-

@@ -1,6 +1,7 @@
 // src/pages/ScanPage.jsx
 import { useState, useEffect } from 'react'
 import s from './ScanPage.module.css'
+import { formatSystemDate } from '../lib/datetime'
 
 const STEPS = {
   idle: null,
@@ -10,24 +11,80 @@ const STEPS = {
   done: { label: 'Done!', pct: 100 },
 }
 
-export default function ScanPage({ account, onNavigate }) {
+export default function ScanPage({ account, onNavigate, platform = 'electron' }) {
+  const isWeb = platform === 'web'
   const [scanType, setScanType] = useState('followers')
   const [scanning, setScanning] = useState(false)
   const [progress, setProgress] = useState(null) // { step, message, count }
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [snapshots, setSnapshots] = useState([])
+  const [manualInput, setManualInput] = useState('')
+  const [importSource, setImportSource] = useState('')
 
   useEffect(() => {
     if (account) loadSnaps()
-    // Listen for scan progress from main process
-    window.api.scan.onProgress(p => setProgress(p))
-    return () => window.api.scan.offProgress()
+    if (!isWeb) {
+      window.api.scan.onProgress(p => setProgress(p))
+      return () => window.api.scan.offProgress()
+    }
+  }, [account, isWeb])
+
+  useEffect(() => {
+    setResult(null)
+    setError('')
+    setProgress(null)
+    setManualInput('')
+    setImportSource('')
   }, [account])
 
   async function loadSnaps() {
     const s = await window.api.snapshots.list(account.id)
     setSnapshots(s)
+  }
+
+  async function finishSnapshot(usernames, sourceLabel) {
+    const normalized = normalizeImportedUsernames(usernames)
+    if (normalized.length === 0) {
+      setError('Add at least one username before saving a snapshot.')
+      setProgress(null)
+      setScanning(false)
+      return
+    }
+
+    setScanning(true)
+    setResult(null)
+    setError('')
+    setProgress({ step: isWeb ? 'opening' : 'saving', message: isWeb ? 'Preparing imported usernames...' : 'Saving snapshot...' })
+
+    try {
+      setProgress({ step: 'saving', message: 'Saving snapshot...' })
+
+      const snap = await window.api.snapshots.save({
+        accountId: account.id,
+        type: scanType,
+        usernames: normalized,
+      })
+
+      const prevSnap = snapshots.find(ss => ss.type === scanType)
+      let diff = null
+      if (prevSnap) {
+        diff = await window.api.snapshots.diff({
+          fromId: prevSnap.id,
+          toId: snap.id,
+          accountId: account.id,
+          type: scanType,
+        })
+      }
+
+      setResult({ count: normalized.length, diff, snap, sourceLabel })
+      setProgress({ step: 'done', message: isWeb ? 'Import complete!' : 'Scan complete!' })
+      await loadSnaps()
+    } catch (e) {
+      setError(e.message || (isWeb ? 'Import failed' : 'Scan failed'))
+    } finally {
+      setScanning(false)
+    }
   }
 
   async function startScan() {
@@ -47,33 +104,30 @@ export default function ScanPage({ account, onNavigate }) {
         return
       }
 
-      setProgress({ step: 'saving', message: 'Saving snapshot...' })
-
-      const snap = await window.api.snapshots.save({
-        accountId: account.id,
-        type: scanType,
-        usernames: res.usernames,
-      })
-
-      // Run diff if we have a previous snapshot of same type
-      const prevSnap = snapshots.find(ss => ss.type === scanType)
-      let diff = null
-      if (prevSnap) {
-        diff = await window.api.snapshots.diff({
-          fromId: prevSnap.id,
-          toId: snap.id,
-          accountId: account.id,
-          type: scanType,
-        })
-      }
-
-      setResult({ count: res.usernames.length, diff, snap })
-      setProgress({ step: 'done', message: 'Scan complete!' })
-      await loadSnaps()
+      await finishSnapshot(res.usernames, 'Instagram scan')
     } catch (e) {
       setError(e.message || 'Scan failed')
-    } finally {
       setScanning(false)
+    }
+  }
+
+  async function handleImport() {
+    await finishSnapshot(parseImportedText(manualInput), importSource || 'pasted list')
+  }
+
+  async function handleFileSelect(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      setManualInput(text)
+      setImportSource(file.name)
+      setError('')
+    } catch (e) {
+      setError(e.message || 'Could not read that file.')
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -86,8 +140,12 @@ export default function ScanPage({ account, onNavigate }) {
     <div className={s.page}>
       <div className={s.hdr}>
         <div className={s.eyebrow}>Scan</div>
-        <h1 className={s.title}>Run a scan</h1>
-        <p className={s.sub}>A browser window will open. Log into Instagram there if prompted — your session is saved locally for next time.</p>
+        <h1 className={s.title}>{isWeb ? 'Import a snapshot' : 'Run a scan'}</h1>
+        <p className={s.sub}>
+          {isWeb
+            ? 'Paste usernames or upload a plain text or CSV export to save a follower or following snapshot directly in your browser.'
+            : 'A browser window will open. Log into Instagram there if prompted — your session is saved locally for next time.'}
+        </p>
       </div>
 
       {/* Type selector */}
@@ -113,11 +171,50 @@ export default function ScanPage({ account, onNavigate }) {
         ))}
       </div>
 
-      {/* Scan button */}
+      {isWeb && !scanning && !result && (
+        <div className={s.importCard}>
+          <div className={s.importHeader}>
+            <div>
+              <div className={s.importTitle}>Paste or upload usernames</div>
+              <div className={s.importSub}>One username per line works best. Commas, spaces, and `@handles` are fine too.</div>
+            </div>
+            <label className={s.fileBtn}>
+              Upload file
+              <input
+                className={s.fileInput}
+                type="file"
+                accept=".txt,.csv,.json"
+                onChange={handleFileSelect}
+              />
+            </label>
+          </div>
+
+          <textarea
+            className={s.importTextarea}
+            value={manualInput}
+            onChange={e => {
+              setManualInput(e.target.value)
+              if (!importSource) setImportSource('pasted list')
+            }}
+            placeholder={`username\nanother_user\n@thirduser`}
+            spellCheck={false}
+          />
+
+          <div className={s.importFooter}>
+            <div className={s.importMeta}>
+              {importSource ? `Source: ${importSource}` : 'Source: pasted list'}
+            </div>
+            <div className={s.importMeta}>
+              {normalizeImportedUsernames(parseImportedText(manualInput)).length.toLocaleString()} usernames ready
+            </div>
+          </div>
+        </div>
+      )}
+
       {!scanning && !result && (
-        <button className={s.bigScanBtn} onClick={startScan}>
+        <button className={s.bigScanBtn} onClick={isWeb ? handleImport : startScan}>
           <ScanIcon />
-          Scan {scanType} now
+          {isWeb ? `Save ${scanType} snapshot` : `Scan ${scanType} now`}
         </button>
       )}
 
@@ -131,7 +228,7 @@ export default function ScanPage({ account, onNavigate }) {
           <div className={s.progressBar}>
             <div className={s.progressFill} style={{ width: `${pct}%` }} />
           </div>
-          <div className={s.progressHint}>Keep this window open. Do not close the browser.</div>
+          <div className={s.progressHint}>{isWeb ? 'Your imported data stays in this browser only.' : 'Keep this window open. Do not close the browser.'}</div>
         </div>
       )}
 
@@ -140,10 +237,10 @@ export default function ScanPage({ account, onNavigate }) {
         <div className={s.errorCard}>
           <ErrorIcon />
           <div>
-            <div className={s.errorTitle}>Scan failed</div>
+            <div className={s.errorTitle}>{isWeb ? 'Import failed' : 'Scan failed'}</div>
             <div className={s.errorMsg}>{error}</div>
           </div>
-          <button className={s.retryBtn} onClick={startScan}>Retry</button>
+          <button className={s.retryBtn} onClick={isWeb ? handleImport : startScan}>{isWeb ? 'Try again' : 'Retry'}</button>
         </div>
       )}
 
@@ -153,8 +250,10 @@ export default function ScanPage({ account, onNavigate }) {
           <div className={s.resultHdr}>
             <CheckIcon />
             <div>
-              <div className={s.resultTitle}>Scan complete</div>
-              <div className={s.resultSub}>{result.count.toLocaleString()} {scanType} captured</div>
+              <div className={s.resultTitle}>{isWeb ? 'Snapshot saved' : 'Scan complete'}</div>
+              <div className={s.resultSub}>
+                {result.count.toLocaleString()} {scanType} captured{result.sourceLabel ? ` · ${result.sourceLabel}` : ''}
+              </div>
             </div>
           </div>
 
@@ -171,22 +270,29 @@ export default function ScanPage({ account, onNavigate }) {
           )}
 
           <div className={s.resultActions}>
-            <button className={s.resultBtn} onClick={() => { setResult(null); setProgress(null) }}>Scan again</button>
+            <button className={s.resultBtn} onClick={() => { setResult(null); setProgress(null) }}>{isWeb ? 'Import another' : 'Scan again'}</button>
             {result.diff && <button className={s.resultBtnPrimary} onClick={() => onNavigate('compare')}>View diff →</button>}
           </div>
         </div>
       )}
 
-      {/* How Playwright works */}
       <div className={s.infoCard}>
-        <div className={s.infoTitle}>How scanning works</div>
+        <div className={s.infoTitle}>{isWeb ? 'How web imports work' : 'How scanning works'}</div>
         <div className={s.infoGrid}>
-          {[
-            { icon: '🪟', t: 'Real browser', d: 'Uses Playwright to open a real Chromium window — not a hidden headless session.' },
-            { icon: '🔐', t: 'Your login', d: 'You log in on Instagram\'s own page. Your password is never seen or stored by this app.' },
-            { icon: '💾', t: 'Local session', d: 'Login cookies are saved on this device so future scans are one-click.' },
-            { icon: '🐢', t: 'Slow by design', d: 'Random delays between scrolls to avoid triggering Instagram\'s rate limits.' },
-          ].map(item => (
+          {(isWeb
+            ? [
+                { icon: '📥', t: 'Manual import', d: 'Paste usernames or upload a file from any workflow you trust.' },
+                { icon: '💾', t: 'Browser-local storage', d: 'Accounts, snapshots, and diffs are saved in this browser only.' },
+                { icon: '📊', t: 'Same analytics', d: 'Compare snapshots, inspect gains/losses, and analyze relationships like the desktop app.' },
+                { icon: '🔐', t: 'No login handling', d: 'The web version never requests Instagram credentials or automation access.' },
+              ]
+            : [
+                { icon: '🪟', t: 'Real browser', d: 'Uses Playwright to open a real Chromium window — not a hidden headless session.' },
+                { icon: '🔐', t: 'Your login', d: 'You log in on Instagram\'s own page. Your password is never seen or stored by this app.' },
+                { icon: '💾', t: 'Local session', d: 'Login cookies are saved on this device so future scans are one-click.' },
+                { icon: '🐢', t: 'Slow by design', d: 'Random delays between scrolls to avoid triggering Instagram\'s rate limits.' },
+              ]
+          ).map(item => (
             <div key={item.t} className={s.infoItem}>
               <span className={s.infoItemIcon}>{item.icon}</span>
               <div>
@@ -201,8 +307,36 @@ export default function ScanPage({ account, onNavigate }) {
   )
 }
 
+function parseImportedText(text) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return []
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) return parsed
+      if (Array.isArray(parsed?.usernames)) return parsed.usernames
+    } catch {
+      return trimmed.split(/[\s,]+/)
+    }
+  }
+
+  return trimmed
+    .split(/[\n\r,]+/)
+    .flatMap(part => part.split(/\s+/))
+    .filter(Boolean)
+}
+
+function normalizeImportedUsernames(values) {
+  return [...new Set(
+    values
+      .map(value => String(value || '').trim().replace(/^@/, '').toLowerCase())
+      .filter(value => value && value !== 'username')
+  )]
+}
+
 function fmtDate(dt) {
-  return new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return formatSystemDate(dt, { month: 'short', day: 'numeric' })
 }
 
 function FollowerIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> }

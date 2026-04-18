@@ -4,6 +4,27 @@
 .eyebrow { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 6px; }
 .title { font-size: 26px; font-weight: 800; letter-spacing: -.3px; margin-bottom: 8px; font-family: var(--font-display); line-height: 1.2; }
 .sub { font-size: 13px; color: var(--text2); line-height: 1.6; }
+.toolbar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.refreshBtn {
+  width: 34px;
+  height: 34px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.refreshBtn:hover:not(:disabled) { background: var(--bg3); border-color: var(--border3); }
+.refreshBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .filters { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
 .chip {
