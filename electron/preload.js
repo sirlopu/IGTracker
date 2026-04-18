@@ -2,6 +2,14 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
+  meta: {
+    platform: 'electron',
+    capabilities: {
+      automatedScan: true,
+      unfollow: true,
+    },
+  },
+
   // Accounts
   accounts: {
     list: () => ipcRenderer.invoke('accounts:list'),
@@ -30,6 +38,11 @@ contextBridge.exposeInMainWorld('api', {
     following: (data) => ipcRenderer.invoke('scan:following', data),
     onProgress: (cb) => ipcRenderer.on('scan:progress', (_, data) => cb(data)),
     offProgress: () => ipcRenderer.removeAllListeners('scan:progress'),
+  },
+
+  // Relations
+  relations: {
+    unfollow: (data) => ipcRenderer.invoke('relations:unfollow', data),
   },
 
   // Export

@@ -2,6 +2,23 @@
 
 A local-first Instagram follower tracker. Runs entirely on your device via Electron + Playwright. No server, no API keys, no native compilation required.
 
+## Web app
+
+This repo now also runs as a standalone web app:
+
+```bash
+npm install
+npm run dev:web
+```
+
+Build the browser version with:
+
+```bash
+npm run build:web
+```
+
+The web build keeps all data in browser local storage and replaces Playwright automation with manual snapshot import, so you can paste or upload follower/following username lists and still use the dashboard, compare, relations, and events views.
+
 ## Quick start
 
 ```bash
@@ -83,6 +100,34 @@ Instagram changes their DOM periodically. If scans return 0 results, update the 
 npm run build
 # Output: dist-electron/
 ```
+
+### macOS signing and notarization
+
+If you ship the macOS app to other users, an unsigned build will be blocked by Gatekeeper with an "unidentified developer" or "cannot be opened" warning. For a user-installable macOS release, build with an Apple Developer ID certificate and notarize the app.
+
+Expected environment variables for signed macOS builds:
+
+```bash
+export CSC_LINK=/path/to/DeveloperIDApplication.p12
+export CSC_KEY_PASSWORD=your_certificate_password
+export APPLE_ID=you@example.com
+export APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
+export APPLE_TEAM_ID=YOURTEAMID
+```
+
+Then run:
+
+```bash
+npm run build:mac
+```
+
+For local testing only, you can still make an unsigned macOS build:
+
+```bash
+npm run build:mac:unsigned
+```
+
+Unsigned builds are not appropriate for end users unless they manually bypass macOS security prompts.
 
 ## Privacy
 

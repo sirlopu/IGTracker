@@ -216,6 +216,17 @@ function run(sql, params = []) {
   return db.exec('SELECT last_insert_rowid() as id')[0]?.values[0][0]
 }
 
+function appTimestamp() {
+  return new Date().toISOString()
+}
+
+function insertEvent({ accountId, eventType, username, fromSnapshotId = 0, toSnapshotId = 0 }) {
+  return run(
+    'INSERT INTO events (account_id,event_type,username,from_snapshot_id,to_snapshot_id,created_at) VALUES(?,?,?,?,?,?)',
+    [accountId, eventType, username, fromSnapshotId, toSnapshotId, appTimestamp()]
+  )
+}
+
 // ─── IPC: ACCOUNTS ──────────────────────────────────────────────────────────
 ipcMain.handle('accounts:list', () =>
   all('SELECT * FROM accounts ORDER BY created_at ASC'))
@@ -223,7 +234,7 @@ ipcMain.handle('accounts:list', () =>
 ipcMain.handle('accounts:create', (_, username) => {
   const existing = get('SELECT * FROM accounts WHERE username = ?', [username])
   if (existing) return existing
-  const id = run('INSERT INTO accounts (username) VALUES (?)', [username])
+  const id = run('INSERT INTO accounts (username, created_at) VALUES (?, ?)', [username, appTimestamp()])
   persistDb()
   return get('SELECT * FROM accounts WHERE id = ?', [id])
 })
@@ -243,9 +254,10 @@ ipcMain.handle('snapshots:list', (_, accountId) =>
   all('SELECT * FROM snapshots WHERE account_id = ? ORDER BY taken_at DESC LIMIT 30', [accountId]))
 
 ipcMain.handle('snapshots:save', (_, { accountId, type, usernames }) => {
+  const takenAt = appTimestamp()
   const snapId = run(
-    'INSERT INTO snapshots (account_id, type, total_count) VALUES (?, ?, ?)',
-    [accountId, type, usernames.length]
+    'INSERT INTO snapshots (account_id, type, taken_at, total_count) VALUES (?, ?, ?, ?)',
+    [accountId, type, takenAt, usernames.length]
   )
   for (const username of usernames) {
     let member = get('SELECT id FROM members WHERE username = ?', [username])
@@ -275,11 +287,9 @@ ipcMain.handle('snapshots:diff', (_, { fromId, toId, accountId, type }) => {
 
   run('DELETE FROM events WHERE account_id=? AND from_snapshot_id=? AND to_snapshot_id=?', [accountId, fromId, toId])
   for (const u of gained)
-    run('INSERT INTO events (account_id,event_type,username,from_snapshot_id,to_snapshot_id) VALUES(?,?,?,?,?)',
-        [accountId, gainedType, u, fromId, toId])
+    insertEvent({ accountId, eventType: gainedType, username: u, fromSnapshotId: fromId, toSnapshotId: toId })
   for (const u of lost)
-    run('INSERT INTO events (account_id,event_type,username,from_snapshot_id,to_snapshot_id) VALUES(?,?,?,?,?)',
-        [accountId, lostType, u, fromId, toId])
+    insertEvent({ accountId, eventType: lostType, username: u, fromSnapshotId: fromId, toSnapshotId: toId })
   persistDb()
   return { gained, lost, gainedCount: gained.length, lostCount: lost.length }
 })
@@ -321,6 +331,102 @@ ipcMain.handle('export:csv', async (_, { snapshotId, filename }) => {
 // ─── IPC: SHELL ─────────────────────────────────────────────────────────────
 ipcMain.handle('shell:openExternal', (_, url) => shell.openExternal(url))
 
+// ─── IPC: RELATIONS ────────────────────────────────────────────────────────
+ipcMain.handle('relations:unfollow', async (_, { accountUsername, usernames }) => {
+  const normalizedAccount = normalizeUsername(accountUsername)
+  const normalizedTargets = [...new Set((usernames || []).map(normalizeUsername).filter(Boolean))]
+  const account = get('SELECT * FROM accounts WHERE username = ?', [normalizedAccount])
+
+  if (!normalizedAccount) {
+    return { error: 'Missing account username.', results: [] }
+  }
+  if (normalizedTargets.length === 0) {
+    return { error: 'Choose at least one account to unfollow.', results: [] }
+  }
+  if (!account) {
+    return { error: 'Could not find that tracked account.', results: [] }
+  }
+
+  return withInstagramSession(normalizedAccount, async (page) => {
+    mainWindow?.webContents.send('scan:progress', {
+      step: 'opening',
+      message: 'Opening Instagram session...',
+    })
+
+    await page.goto('https://www.instagram.com/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    })
+
+    mainWindow?.webContents.send('scan:progress', {
+      step: 'opening',
+      message: 'Waiting for Instagram session… sign in if prompted.',
+    })
+
+    const ok = await waitForLogin(page)
+    if (!ok) {
+      return {
+        error: 'Login timed out. Please try again and log in within 2 minutes.',
+        results: normalizedTargets.map(username => ({
+          username,
+          ok: false,
+          error: 'Login timed out.',
+        })),
+      }
+    }
+
+    const results = []
+
+    for (let i = 0; i < normalizedTargets.length; i += 1) {
+      const username = normalizedTargets[i]
+      mainWindow?.webContents.send('scan:progress', {
+        step: 'scrolling',
+        message: `Unfollowing @${username} (${i + 1}/${normalizedTargets.length})...`,
+        count: i + 1,
+      })
+
+      try {
+        const unfollowResult = await unfollowUser(page, username)
+        if (!unfollowResult.ok) {
+          insertEvent({
+            accountId: account.id,
+            eventType: 'unfollow_failed',
+            username,
+          })
+          results.push({ username, ok: false, error: unfollowResult.error || 'Instagram rejected the unfollow request.' })
+          if (unfollowResult.rateLimited) break
+          continue
+        }
+
+        insertEvent({
+          accountId: account.id,
+          eventType: 'unfollowed',
+          username,
+        })
+        results.push({ username, ok: true })
+        await page.waitForTimeout(2200 + Math.random() * 1800)
+      } catch (error) {
+        insertEvent({
+          accountId: account.id,
+          eventType: 'unfollow_failed',
+          username,
+        })
+        results.push({ username, ok: false, error: error.message || 'Unfollow failed.' })
+      }
+    }
+
+    persistDb()
+
+    mainWindow?.webContents.send('scan:progress', {
+      step: 'done',
+      message: `Finished ${normalizedTargets.length} unfollow request${normalizedTargets.length === 1 ? '' : 's'}.`,
+      count: results.filter(item => item.ok).length,
+    })
+
+    return { results }
+  })
+})
+
 // ─── PLAYWRIGHT SCANNING ────────────────────────────────────────────────────
 // scan:launch is the entry point exposed in the preload — it dispatches
 // to the correct handler based on the type field in the payload.
@@ -329,49 +435,12 @@ ipcMain.handle('scan:followers', (_, { username })       => runScan(username, 'f
 ipcMain.handle('scan:following', (_, { username })       => runScan(username, 'following'))
 
 async function runScan(username, type) {
-  // Verify Playwright's Chromium is available before doing anything else.
-  // On a fresh install the browser binaries are not bundled with the app —
-  // give the user a clear, actionable message instead of a cryptic crash.
-  let chromium
-  try {
-    chromium = require('playwright').chromium
-    // executablePath() throws if the browser has never been installed
-    const execPath = chromium.executablePath()
-    if (!fs.existsSync(execPath)) throw new Error('not found')
-  } catch (_) {
-    return {
-      error:
-        'Chromium browser not found.\n\n' +
-        'Please run the following command once and restart the app:\n\n' +
-        '    npx playwright install chromium',
-    }
-  }
-
-  const sessionPath = path.join(userDataPath, `session_${username}`)
-  try { fs.mkdirSync(sessionPath, { recursive: true }) } catch (e) {
-    return { error: `Could not create session directory: ${e.message}` }
-  }
-
-  // Remove stale Chromium lock files left by a previous crashed session
-  for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
-    const p = path.join(sessionPath, lock)
-    try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
-  }
-
-  let ctx = null
-  try {
+  const normalizedUsername = normalizeUsername(username)
+  return withInstagramSession(normalizedUsername, async (page, ctx) => {
     mainWindow.webContents.send('scan:progress', { step: 'opening', message: 'Opening Instagram...' })
 
-    ctx = await chromium.launchPersistentContext(sessionPath, {
-      headless: false,
-      viewport: { width: 1080, height: 900 },
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    })
-
-    const page = ctx.pages()[0] || await ctx.newPage()
-
     // Navigate to profile — triggers login if needed
-    await page.goto(`https://www.instagram.com/${username}/`, {
+    await page.goto(`https://www.instagram.com/${normalizedUsername}/`, {
       waitUntil: 'domcontentloaded', timeout: 30000,
     })
 
@@ -381,7 +450,6 @@ async function runScan(username, type) {
 
     const ok = await waitForLogin(page)
     if (!ok) {
-      await ctx.close()
       return { error: 'Login timed out. Please try again and log in within 2 minutes.' }
     }
 
@@ -390,27 +458,80 @@ async function runScan(username, type) {
     })
 
     // Get the numeric user ID we need for the API
-    const userId = await getUserId(page, username)
+    const userId = await getUserId(page, normalizedUsername)
     if (!userId) {
-      await ctx.close()
-      return { error: `Could not resolve user ID for @${username}. Make sure you are logged in and the profile loaded.` }
+      return { error: `Could not resolve user ID for @${normalizedUsername}. Make sure you are logged in and the profile loaded.` }
     }
 
     // Paginate through the full list using Instagram's internal REST API
-    const usernames = await paginateFriendships(page, userId, type, username)
-
-    await ctx.close()
+    const usernames = await paginateFriendships(page, userId, type, normalizedUsername)
 
     mainWindow.webContents.send('scan:progress', {
       step: 'done', message: `Found ${usernames.length} ${type}`, count: usernames.length,
     })
     return { usernames, count: usernames.length }
+  }, 'Scan error')
+}
 
+async function withInstagramSession(username, task, errorLabel = 'Instagram session error') {
+  const chromium = getPlaywrightChromium()
+  if (chromium.error) return { error: chromium.error }
+
+  const sessionPath = getSessionPath(username)
+  if (sessionPath.error) return { error: sessionPath.error }
+
+  let ctx = null
+  try {
+    ctx = await chromium.launchPersistentContext(sessionPath, {
+      headless: false,
+      viewport: { width: 1080, height: 900 },
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
+
+    const page = ctx.pages()[0] || await ctx.newPage()
+    return await task(page, ctx)
   } catch (e) {
-    console.error('Scan error:', e)
-    try { if (ctx) await ctx.close() } catch (_) {}
+    console.error(`${errorLabel}:`, e)
     return { error: e.message }
+  } finally {
+    try { if (ctx) await ctx.close() } catch (_) {}
   }
+}
+
+function getPlaywrightChromium() {
+  try {
+    const chromium = require('playwright').chromium
+    const execPath = chromium.executablePath()
+    if (!fs.existsSync(execPath)) throw new Error('not found')
+    return chromium
+  } catch (_) {
+    return {
+      error:
+        'Chromium browser not found.\n\n' +
+        'Please run the following command once and restart the app:\n\n' +
+        '    npx playwright install chromium',
+    }
+  }
+}
+
+function getSessionPath(username) {
+  const sessionPath = path.join(userDataPath, `session_${username}`)
+  try {
+    fs.mkdirSync(sessionPath, { recursive: true })
+  } catch (e) {
+    return { error: `Could not create session directory: ${e.message}` }
+  }
+
+  for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
+    const p = path.join(sessionPath, lock)
+    try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
+  }
+
+  return sessionPath
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase()
 }
 
 // Extract the numeric Instagram user ID from the profile page JSON
@@ -446,6 +567,194 @@ async function getUserId(page, username) {
   } catch (_) {
     return null
   }
+}
+
+async function unfollowUser(page, userId) {
+  return unfollowViaProfileUi(page, userId)
+}
+
+async function unfollowViaProfileUi(page, username) {
+  try {
+    const profileResponse = await page.goto(`https://www.instagram.com/${username}/`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
+    })
+
+    const profileRedirect = getInstagramRedirectError(page, profileResponse)
+    if (profileRedirect) return profileRedirect
+
+    const ok = await waitForLogin(page, 15000)
+    if (!ok) {
+      return { ok: false, error: 'Login timed out.' }
+    }
+
+    const beforeState = await getProfileActionState(page)
+    if (beforeState.rateLimited) {
+      return {
+        ok: false,
+        rateLimited: true,
+        error: 'Instagram rate-limited the unfollow flow. Wait a few minutes before trying again.',
+      }
+    }
+    if (beforeState.following === false) {
+      return { ok: false, error: 'This profile is already not followed.' }
+    }
+
+    const followingButton = await findVisibleLocator(page, [
+      () => page.locator('header button').filter({ hasText: /^(following|requested)$/i }),
+      () => page.locator('header [role="button"]').filter({ hasText: /^(following|requested)$/i }),
+      () => page.getByRole('button', { name: /^(following|requested)$/i }),
+      () => page.getByRole('button', { name: /^following/i }),
+    ], 8000)
+
+    if (!followingButton) {
+      return { ok: false, error: 'Could not find the Following button on that profile.' }
+    }
+
+    await followingButton.click()
+    await page.waitForTimeout(900)
+
+    const unfollowButton = await findVisibleLocator(page, [
+      () => page.getByRole('button', { name: /^unfollow$/i }),
+      () => page.locator('[role="dialog"] button').filter({ hasText: /^unfollow$/i }),
+      () => page.locator('[role="dialog"] [role="button"]').filter({ hasText: /^unfollow$/i }),
+      () => page.locator('[role="menu"] button').filter({ hasText: /^unfollow$/i }),
+      () => page.locator('[role="menu"] [role="button"]').filter({ hasText: /^unfollow$/i }),
+      () => page.locator('button').filter({ hasText: /^unfollow$/i }),
+      () => page.locator('[role="button"]').filter({ hasText: /^unfollow$/i }),
+      () => page.getByText(/^unfollow$/i),
+    ], 8000)
+
+    if (!unfollowButton) {
+      await page.keyboard.press('Escape').catch(() => {})
+      return { ok: false, error: 'Could not find the Unfollow confirmation button.' }
+    }
+
+    await unfollowButton.click()
+    await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
+
+    const confirmationRedirect = getInstagramRedirectError(page)
+    if (confirmationRedirect) return confirmationRedirect
+
+    const verifiedState = await waitForProfileActionState(page, state => state.following === false, 12000)
+    if (verifiedState?.following === false) {
+      return { ok: true }
+    }
+    if (verifiedState?.rateLimited) {
+      return {
+        ok: false,
+        rateLimited: true,
+        error: 'Instagram rate-limited the verification step. Wait a few minutes before trying again.',
+      }
+    }
+
+    return { ok: false, error: 'Instagram did not confirm the profile changed to Follow/Follow Back.' }
+  } catch (error) {
+    return { ok: false, error: error.message || 'UI unfollow failed.' }
+  }
+}
+
+function getInstagramRedirectError(page, response = null) {
+  const status = response?.status?.()
+  const url = page.url()
+
+  if (status && status >= 300 && status < 400) {
+    return {
+      ok: false,
+      error: `Instagram redirected the request with HTTP ${status}. Open the Instagram window and finish any login, challenge, or verification prompt, then try again.`,
+    }
+  }
+
+  if (/\/accounts\/login\b/.test(url)) {
+    return {
+      ok: false,
+      error: 'Instagram redirected to login. Sign in in the opened Instagram window, then try again.',
+    }
+  }
+
+  if (/\/challenge\b|\/challenge\//.test(url)) {
+    return {
+      ok: false,
+      error: 'Instagram redirected to a verification challenge. Complete it in the opened Instagram window, then try again.',
+    }
+  }
+
+  if (/\/accounts\/onetap\b|\/accounts\/suspended\b|\/accounts\/disabled\b/.test(url)) {
+    return {
+      ok: false,
+      error: 'Instagram redirected away from the profile. Resolve the prompt in the opened Instagram window, then try again.',
+    }
+  }
+
+  return null
+}
+
+async function getProfileActionState(page) {
+  try {
+    return await page.evaluate(() => {
+      const getText = (element) => (element?.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
+      const root = document.querySelector('header') || document
+      const candidates = [...root.querySelectorAll('button, [role="button"]')]
+      const texts = candidates.map(getText).filter(Boolean)
+
+      if (texts.some(text => text.includes('try again later'))) {
+        return { following: null, rateLimited: true }
+      }
+      if (texts.some(text => /^following$/.test(text) || /^requested$/.test(text))) {
+        return { following: true, rateLimited: false }
+      }
+      if (texts.some(text => /^follow back$/.test(text) || /^follow$/.test(text))) {
+        return { following: false, rateLimited: false }
+      }
+
+      try {
+        const bodyText = (document.body?.innerText || '').toLowerCase()
+        if (bodyText.includes('try again later')) {
+          return { following: null, rateLimited: true }
+        }
+      } catch (_) {}
+
+      return {
+        following: null,
+        rateLimited: false,
+      }
+    })
+  } catch (error) {
+    return { error: error.message || 'Could not inspect the profile.' }
+  }
+}
+
+async function waitForProfileActionState(page, predicate, timeout = 8000) {
+  const deadline = Date.now() + timeout
+  let latest = null
+
+  while (Date.now() < deadline) {
+    latest = await getProfileActionState(page)
+    if (predicate(latest)) return latest
+    if (latest.rateLimited) return latest
+    await page.waitForTimeout(400)
+  }
+
+  return latest
+}
+
+async function findVisibleLocator(page, locatorFactories, timeout = 5000) {
+  const deadline = Date.now() + timeout
+
+  while (Date.now() < deadline) {
+    for (const createLocator of locatorFactories) {
+      try {
+        const locator = createLocator().first()
+        if (await locator.isVisible().catch(() => false)) {
+          return locator
+        }
+      } catch (_) {}
+    }
+
+    await page.waitForTimeout(250)
+  }
+
+  return null
 }
 
 // Walk all pages of the friendships API and return every username

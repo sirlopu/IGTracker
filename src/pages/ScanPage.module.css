@@ -32,6 +32,68 @@
 .bigScanBtn:hover { background: #cf3168; }
 .bigScanBtn:active { transform: scale(.98); }
 
+.importCard {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 18px;
+  margin-bottom: 18px;
+}
+.importHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.importTitle { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.importSub { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.fileBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--rs);
+  color: var(--text2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.fileBtn:hover { border-color: var(--border3); color: var(--text); }
+.fileInput {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.importTextarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--text);
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.importTextarea:focus { border-color: var(--pink); }
+.importTextarea::placeholder { color: var(--text3); }
+.importFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.importMeta { font-size: 11px; color: var(--text3); font-family: var(--font-mono); }
+
 .progressCard {
   background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r);
   padding: 22px; margin-bottom: 24px;
@@ -80,3 +142,17 @@
 .infoItemIcon { font-size: 18px; flex-shrink: 0; }
 .infoItemTitle { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
 .infoItemDesc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+@media (max-width: 720px) {
+  .page { padding: 24px; }
+  .typeSel { grid-template-columns: 1fr; }
+  .importHeader,
+  .importFooter,
+  .progressTop,
+  .diffRow,
+  .resultActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .infoGrid { grid-template-columns: 1fr; }
+}
