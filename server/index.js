@@ -204,79 +204,104 @@ async function withInstagramPage(sessionId, task) {
   }
 }
 
+// Returns true once the user is logged in, false on timeout.
+// Detects login by URL (not on /accounts/login or /challenge) AND
+// presence of any recognisable logged-in UI element.
 async function waitForLogin(page, ms = 120000) {
   const deadline = Date.now() + ms
   while (Date.now() < deadline) {
     try {
-      const loggedIn = await page.evaluate(() => {
-        if (location.href.includes('/accounts/login')) return false
-        return !!(
-          document.querySelector('svg[aria-label="Home"]') ||
-          document.querySelector('a[href="/direct/inbox/"]') ||
-          document.querySelector('[aria-label="Profile"]') ||
-          document.querySelector('nav a[href*="/direct/"]')
-        )
+      const state = await page.evaluate(() => {
+        const url = location.href
+        if (/\/(accounts\/login|challenge|accounts\/suspended)/.test(url)) return 'login_page'
+        // Broad set of selectors that work across Instagram UI versions
+        const loggedInSignals = [
+          'svg[aria-label="Home"]',
+          'a[href="/direct/inbox/"]',
+          '[aria-label="Profile"]',
+          'nav a[href*="/direct/"]',
+          'a[href="/"]',           // home link in nav
+          '[role="navigation"]',   // nav exists = logged in
+        ]
+        if (loggedInSignals.some(sel => document.querySelector(sel))) return 'logged_in'
+        return 'loading'
       })
-      if (loggedIn) return true
+      if (state === 'logged_in') return true
     } catch (_) {}
     await page.waitForTimeout(1500)
   }
   return false
 }
 
-async function getLoggedInUsername(page) {
-  // Method 1: internal API (fastest)
-  try {
-    const result = await page.evaluate(async () => {
-      const r = await fetch('/api/v1/accounts/current_user/?edit=true', {
-        headers: { 'x-ig-app-id': '936619743392459' },
-        credentials: 'include',
+// Try every known method to extract the logged-in username.
+// Retries for up to `ms` milliseconds to handle slow page renders.
+async function getLoggedInUsername(page, ms = 15000) {
+  const deadline = Date.now() + ms
+
+  while (Date.now() < deadline) {
+    // Method 1: internal REST API — fastest when it works
+    try {
+      const result = await page.evaluate(async () => {
+        try {
+          const r = await fetch('/api/v1/accounts/current_user/?edit=true', {
+            headers: { 'x-ig-app-id': '936619743392459' },
+            credentials: 'include',
+          })
+          if (!r.ok) return null
+          const d = await r.json()
+          return d?.user?.username || null
+        } catch { return null }
       })
-      const d = await r.json()
-      return d?.user?.username || null
-    })
-    if (result) return result
-  } catch (_) {}
+      if (result) { console.log('[username] found via API:', result); return result }
+    } catch (_) {}
 
-  // Method 2: profile edit page (the username is in an input field)
-  try {
-    await page.goto('https://www.instagram.com/accounts/edit/', {
-      waitUntil: 'domcontentloaded', timeout: 15000,
-    })
-    await page.waitForTimeout(1500)
-    const result = await page.evaluate(() => {
-      for (const input of document.querySelectorAll('input')) {
-        const name = input.name || ''
-        const label = (input.getAttribute('aria-label') || '').toLowerCase()
-        if ((name === 'username' || label.includes('username')) && input.value) {
-          return input.value
+    // Method 2: read username from the profile edit page input
+    try {
+      if (!page.url().includes('/accounts/edit')) {
+        await page.goto('https://www.instagram.com/accounts/edit/', {
+          waitUntil: 'domcontentloaded', timeout: 10000,
+        })
+        await page.waitForTimeout(2000)
+      }
+      const result = await page.evaluate(() => {
+        for (const el of document.querySelectorAll('input, [name="username"]')) {
+          const name = el.getAttribute('name') || ''
+          const label = (el.getAttribute('aria-label') || '').toLowerCase()
+          const val = el.value || el.textContent || ''
+          if ((name === 'username' || label.includes('username')) && val.trim()) return val.trim()
         }
-      }
-      return null
-    })
-    if (result) return result
-  } catch (_) {}
+        return null
+      })
+      if (result) { console.log('[username] found via edit page:', result); return result }
+    } catch (_) {}
 
-  // Method 3: profile link in the nav sidebar
-  try {
-    await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
-    await page.waitForTimeout(1500)
-    const result = await page.evaluate(() => {
-      const SKIP = new Set(['explore','reels','direct','stories','accounts','p','tv',''])
-      for (const a of document.querySelectorAll('a[href]')) {
-        if ((a.getAttribute('aria-label') || '').toLowerCase() === 'profile') {
-          return (a.getAttribute('href') || '').replace(/\//g, '') || null
+    // Method 3: profile link in the left nav (href="/username/")
+    try {
+      await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 10000 })
+      await page.waitForTimeout(2000)
+      const result = await page.evaluate(() => {
+        const SKIP = new Set(['explore','reels','direct','stories','accounts','p','tv','reel',''])
+        // aria-label="Profile" is the most reliable signal
+        for (const a of document.querySelectorAll('a[href]')) {
+          if ((a.getAttribute('aria-label') || '').toLowerCase() === 'profile') {
+            const u = (a.getAttribute('href') || '').replace(/\//g, '')
+            if (u) return u
+          }
         }
-      }
-      for (const a of document.querySelectorAll('a[href]')) {
-        const m = (a.getAttribute('href') || '').match(/^\/([a-zA-Z0-9._]+)\/$/)
-        if (m && !SKIP.has(m[1])) return m[1]
-      }
-      return null
-    })
-    if (result) return result
-  } catch (_) {}
+        // Fallback: any /word/ link that isn't a known route
+        for (const a of document.querySelectorAll('a[href]')) {
+          const m = (a.getAttribute('href') || '').match(/^\/([a-zA-Z0-9._]+)\/$/)
+          if (m && !SKIP.has(m[1])) return m[1]
+        }
+        return null
+      })
+      if (result) { console.log('[username] found via nav:', result); return result }
+    } catch (_) {}
 
+    await page.waitForTimeout(2000)
+  }
+
+  console.log('[username] all methods exhausted')
   return null
 }
 
@@ -406,26 +431,33 @@ async function executeLoginJob(jobId, job) {
     const result = await withInstagramPage(tempSessionId, async (page) => {
       send('progress', { message: 'Opening Instagram…' })
 
-      await page.goto('https://www.instagram.com/accounts/login/', {
+      // Go to the home page — if cookies are valid Instagram redirects straight to the feed
+      await page.goto('https://www.instagram.com/', {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
       })
-
       await page.bringToFront().catch(() => {})
 
-      // Check if already logged in before prompting
-      const alreadyLoggedIn = await waitForLogin(page, 3000).catch(() => false)
+      // Quick check: are we already logged in via saved cookies?
+      const alreadyIn = await waitForLogin(page, 4000).catch(() => false)
 
-      if (!alreadyLoggedIn) {
-        send('progress', { message: usingChrome ? 'Please log in to Instagram in the Chrome tab that opened.' : 'Please log in to Instagram in the browser window that just opened.' })
-        const ok = await waitForLogin(page)
-        if (!ok) return { error: 'Login timed out. Please try again and log in within 2 minutes.' }
+      if (!alreadyIn) {
+        // Navigate to login page and wait up to 3 minutes for the user to sign in
+        await page.goto('https://www.instagram.com/accounts/login/', {
+          waitUntil: 'domcontentloaded', timeout: 15000,
+        }).catch(() => {})
+        await page.bringToFront().catch(() => {})
+        send('progress', { message: 'Please log in to Instagram in the browser window.' })
+
+        const ok = await waitForLogin(page, 3 * 60 * 1000)
+        if (!ok) return { error: 'Login timed out. Please try again.' }
       }
 
-      send('progress', { message: 'Detecting your Instagram username…' })
+      send('progress', { message: 'Detecting your username…' })
 
-      const username = await getLoggedInUsername(page)
-      if (!username) return { error: 'Could not detect your Instagram username. Try again.' }
+      // Retry username extraction for up to 20 seconds to handle slow page renders
+      const username = await getLoggedInUsername(page, 20000)
+      if (!username) return { error: 'Logged in but could not read your username. Please try again.' }
 
       return { username }
     })
