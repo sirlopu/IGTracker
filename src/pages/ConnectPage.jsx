@@ -77,7 +77,7 @@ export default function ConnectPage({ onAdd, dbError, platform = 'electron' }) {
               {loading ? (
                 <div className={s.loginStatus}>
                   <div className={s.loginSpinner} />
-                  <p className={s.loginStatusMsg}>{statusMsg || 'Opening browser…'}</p>
+                  <p className={s.loginStatusMsg}>{statusMsg || 'Connecting…'}</p>
                 </div>
               ) : (
                 <button
@@ -85,7 +85,7 @@ export default function ConnectPage({ onAdd, dbError, platform = 'electron' }) {
                   onClick={handleInstagramLogin}
                   disabled={loading || dbError}
                 >
-                  <IgIcon /> Log in with Instagram
+                  <IgIcon /> Connect with Chrome
                 </button>
               )}
               {error && <p className={s.error}>{error}</p>}

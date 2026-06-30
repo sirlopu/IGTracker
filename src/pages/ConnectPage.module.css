@@ -109,3 +109,20 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loginStatusMsg { font-size: 13px; color: var(--text2); text-align: center; line-height: 1.5; }
+
+.chromeSetup { display: flex; flex-direction: column; gap: 10px; }
+.chromeSetupTitle { font-size: 14px; font-weight: 700; color: var(--text); margin: 0; }
+.chromeSetupDesc { font-size: 13px; color: var(--text2); line-height: 1.5; margin: 0; }
+.chromeCmd {
+  display: block;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  background: var(--bg3, var(--bg));
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}

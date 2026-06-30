@@ -120,29 +120,73 @@ function upsertAccount(username) {
   return get('SELECT * FROM accounts WHERE id = ?', [id])
 }
 
-// ─── PLAYWRIGHT ──────────────────────────────────────────────────────────────
-function getPlaywrightChromium() {
-  try {
-    const chromium = require('playwright').chromium
-    const execPath = chromium.executablePath()
-    if (!fs.existsSync(execPath)) throw new Error('not found')
-    return chromium
-  } catch (_) {
-    return { error: 'Chromium not found. Run: npx playwright install chromium' }
+// ─── BROWSER CONNECTION ───────────────────────────────────────────────────────
+// Use the user's existing Chrome profile (cookies) so Instagram is already
+// logged in — no remote debugging flags, no extra setup.
+
+function findChromeProfile() {
+  const candidates = {
+    darwin: path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'Default'),
+    win32: path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data', 'Default'),
+    linux: path.join(os.homedir(), '.config', 'google-chrome', 'Default'),
+  }
+  const p = candidates[process.platform]
+  return p && fs.existsSync(p) ? p : null
+}
+
+function copyChromeSession(srcProfile, destDir) {
+  fs.mkdirSync(destDir, { recursive: true })
+  // Copy only the files that carry authentication — skip cache (can be GBs)
+  for (const file of ['Cookies', 'Cookies-journal']) {
+    const src = path.join(srcProfile, file)
+    if (fs.existsSync(src)) try { fs.copyFileSync(src, path.join(destDir, file)) } catch (_) {}
+  }
+  for (const dir of ['Local Storage', 'Session Storage']) {
+    const src = path.join(srcProfile, dir)
+    if (fs.existsSync(src)) try { fs.cpSync(src, path.join(destDir, dir), { recursive: true }) } catch (_) {}
   }
 }
 
-async function withInstagramSession(sessionId, task) {
-  const chromium = getPlaywrightChromium()
-  if (chromium.error) return { error: chromium.error }
+async function withInstagramPage(sessionId, task) {
+  const { chromium } = require('playwright')
 
-  const sessionPath = path.join(SESSIONS_DIR, `session_${sessionId}`)
+  // ── Prefer user's Chrome profile (already logged in, no setup needed) ────
+  const srcProfile = findChromeProfile()
+  if (srcProfile) {
+    const sessionDir = path.join(SESSIONS_DIR, `chrome_${sessionId}`)
+    try {
+      copyChromeSession(srcProfile, sessionDir)
+      // Remove stale lock files from the copy
+      for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
+        const p = path.join(sessionDir, lock)
+        try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
+      }
+      let ctx = null
+      try {
+        ctx = await chromium.launchPersistentContext(sessionDir, {
+          channel: 'chrome',          // actual Chrome binary — same Keychain key → cookies decrypt
+          headless: false,
+          args: ['--no-first-run', '--no-default-browser-check', '--no-sandbox'],
+        })
+        const page = ctx.pages()[0] || await ctx.newPage()
+        console.log('[browser] launched Chrome with profile copy')
+        return await task(page)
+      } finally {
+        try { if (ctx) await ctx.close() } catch (_) {}
+      }
+    } catch (e) {
+      console.log('[browser] Chrome profile launch failed:', e.message, '— falling back to Playwright Chromium')
+    }
+  }
+
+  // ── Fallback: Playwright's own Chromium with a persistent session ─────────
+  console.log('[browser] using Playwright Chromium')
+  const sessionPath = path.join(SESSIONS_DIR, `pw_${sessionId}`)
   fs.mkdirSync(sessionPath, { recursive: true })
   for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
     const p = path.join(sessionPath, lock)
     try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
   }
-
   let ctx = null
   try {
     ctx = await chromium.launchPersistentContext(sessionPath, {
@@ -181,30 +225,59 @@ async function waitForLogin(page, ms = 120000) {
 }
 
 async function getLoggedInUsername(page) {
-  // Try the current_user API endpoint
-  const username = await page.evaluate(async () => {
-    try {
+  // Method 1: internal API (fastest)
+  try {
+    const result = await page.evaluate(async () => {
       const r = await fetch('/api/v1/accounts/current_user/?edit=true', {
         headers: { 'x-ig-app-id': '936619743392459' },
         credentials: 'include',
       })
       const d = await r.json()
       return d?.user?.username || null
-    } catch { return null }
-  })
-  if (username) return username
+    })
+    if (result) return result
+  } catch (_) {}
 
-  // Fallback: look for profile link in nav
-  return page.evaluate(() => {
-    const links = [...document.querySelectorAll('a[href]')]
-    for (const a of links) {
-      if ((a.getAttribute('aria-label') || '').toLowerCase() === 'profile') {
-        const href = a.getAttribute('href') || ''
-        return href.replace(/\//g, '') || null
+  // Method 2: profile edit page (the username is in an input field)
+  try {
+    await page.goto('https://www.instagram.com/accounts/edit/', {
+      waitUntil: 'domcontentloaded', timeout: 15000,
+    })
+    await page.waitForTimeout(1500)
+    const result = await page.evaluate(() => {
+      for (const input of document.querySelectorAll('input')) {
+        const name = input.name || ''
+        const label = (input.getAttribute('aria-label') || '').toLowerCase()
+        if ((name === 'username' || label.includes('username')) && input.value) {
+          return input.value
+        }
       }
-    }
-    return null
-  })
+      return null
+    })
+    if (result) return result
+  } catch (_) {}
+
+  // Method 3: profile link in the nav sidebar
+  try {
+    await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
+    await page.waitForTimeout(1500)
+    const result = await page.evaluate(() => {
+      const SKIP = new Set(['explore','reels','direct','stories','accounts','p','tv',''])
+      for (const a of document.querySelectorAll('a[href]')) {
+        if ((a.getAttribute('aria-label') || '').toLowerCase() === 'profile') {
+          return (a.getAttribute('href') || '').replace(/\//g, '') || null
+        }
+      }
+      for (const a of document.querySelectorAll('a[href]')) {
+        const m = (a.getAttribute('href') || '').match(/^\/([a-zA-Z0-9._]+)\/$/)
+        if (m && !SKIP.has(m[1])) return m[1]
+      }
+      return null
+    })
+    if (result) return result
+  } catch (_) {}
+
+  return null
 }
 
 async function getUserId(page, username) {
@@ -330,8 +403,8 @@ async function executeLoginJob(jobId, job) {
   try {
     const tempSessionId = `_login_${jobId}`
 
-    const result = await withInstagramSession(tempSessionId, async (page) => {
-      send('progress', { message: 'Opening Instagram login page…' })
+    const result = await withInstagramPage(tempSessionId, async (page) => {
+      send('progress', { message: 'Opening Instagram…' })
 
       await page.goto('https://www.instagram.com/accounts/login/', {
         waitUntil: 'domcontentloaded',
@@ -340,12 +413,16 @@ async function executeLoginJob(jobId, job) {
 
       await page.bringToFront().catch(() => {})
 
-      send('progress', { message: 'Please log in to Instagram in the browser window that just opened.' })
+      // Check if already logged in before prompting
+      const alreadyLoggedIn = await waitForLogin(page, 3000).catch(() => false)
 
-      const ok = await waitForLogin(page)
-      if (!ok) return { error: 'Login timed out. Please try again and log in within 2 minutes.' }
+      if (!alreadyLoggedIn) {
+        send('progress', { message: usingChrome ? 'Please log in to Instagram in the Chrome tab that opened.' : 'Please log in to Instagram in the browser window that just opened.' })
+        const ok = await waitForLogin(page)
+        if (!ok) return { error: 'Login timed out. Please try again and log in within 2 minutes.' }
+      }
 
-      send('progress', { message: 'Logged in! Detecting your username…' })
+      send('progress', { message: 'Detecting your Instagram username…' })
 
       const username = await getLoggedInUsername(page)
       if (!username) return { error: 'Could not detect your Instagram username. Try again.' }
@@ -384,7 +461,7 @@ async function executeScanJob(jobId, job, username, type) {
   const send = (name, data) => broadcast(job, name, data)
 
   try {
-    const result = await withInstagramSession(username, async (page) => {
+    const result = await withInstagramPage(username, async (page) => {
       send('progress', { step: 'opening', message: 'Opening Instagram…' })
 
       await page.goto(`https://www.instagram.com/${username}/`, {
@@ -427,6 +504,8 @@ app.use(express.json())
 
 // ── Health / meta
 app.get('/api/ping', (_req, res) => res.json({ ok: true }))
+
+
 app.get('/api/meta', (_req, res) => res.json({
   platform: 'server',
   capabilities: { automatedScan: true, unfollow: true, loginAtConnect: true },
