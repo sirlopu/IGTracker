@@ -96,3 +96,16 @@
   background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
   padding: 12px 14px;
 }
+
+.loginStatus {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 16px 0;
+}
+.loginSpinner {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 3px solid var(--border2);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loginStatusMsg { font-size: 13px; color: var(--text2); text-align: center; line-height: 1.5; }

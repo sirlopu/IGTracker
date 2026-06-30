@@ -5,8 +5,7 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
-    "dev:web": "concurrently -k \"vite\" \"node server/index.js\"",
-    "server": "node server/index.js",
+    "dev:web": "node server/index.js",
     "dev:renderer": "vite",
     "dev:electron": "cross-env ELECTRON_DEV=1 electron .",
     "build": "vite build && electron-builder",

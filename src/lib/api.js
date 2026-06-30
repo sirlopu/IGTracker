@@ -1,7 +1,8 @@
 import { getAppTimestamp, parseAppDate } from './datetime'
 
 const STORAGE_KEY = 'igtracker.web.db.v1'
-const SERVER_URL = 'http://localhost:3001'
+// Relative URLs work when served from port 3001 (same origin).
+const SERVER_URL = ''
 
 // ─── SERVER API ──────────────────────────────────────────────────────────────
 function createServerApi() {
@@ -64,6 +65,40 @@ function createServerApi() {
       async list() { return apiFetch('/api/accounts') },
       async create(username) { return apiFetch('/api/accounts', { method: 'POST', body: { username } }) },
       async delete(id) { return apiFetch(`/api/accounts/${id}`, { method: 'DELETE' }) },
+
+      loginWithInstagram(onProgress) {
+        return new Promise(async (resolve) => {
+          let loginId
+          try {
+            const r = await apiFetch('/api/accounts/login', { method: 'POST' })
+            loginId = r.loginId
+          } catch (e) {
+            resolve({ error: e.message })
+            return
+          }
+
+          const es = new EventSource(`${SERVER_URL}/api/accounts/login/${loginId}/stream`)
+
+          es.addEventListener('progress', (e) => {
+            if (onProgress) onProgress(JSON.parse(e.data))
+          })
+
+          es.addEventListener('done', (e) => {
+            es.close()
+            resolve(JSON.parse(e.data))
+          })
+
+          es.addEventListener('login_error', (e) => {
+            es.close()
+            resolve({ error: JSON.parse(e.data).error })
+          })
+
+          es.onerror = () => {
+            es.close()
+            resolve({ error: 'Lost connection to server.' })
+          }
+        })
+      },
     },
 
     snapshots: {
@@ -332,7 +367,7 @@ export async function ensureApi() {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 1500)
-    const res = await fetch(`${SERVER_URL}/api/ping`, { signal: controller.signal })
+    const res = await fetch('http://localhost:3001/api/ping', { signal: controller.signal })
     clearTimeout(timeout)
     if (res.ok) {
       window.api = createServerApi()
