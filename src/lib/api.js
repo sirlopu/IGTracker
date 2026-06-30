@@ -1,14 +1,126 @@
 import { getAppTimestamp, parseAppDate } from './datetime'
 
 const STORAGE_KEY = 'igtracker.web.db.v1'
+const SERVER_URL = 'http://localhost:3001'
 
+// ─── SERVER API ──────────────────────────────────────────────────────────────
+function createServerApi() {
+  let progressCallback = null
+
+  async function apiFetch(path, options = {}) {
+    const res = await fetch(`${SERVER_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    return res.json()
+  }
+
+  function runScan({ username, type }) {
+    return new Promise(async (resolve) => {
+      let scanId
+      try {
+        const r = await apiFetch('/api/scan', { method: 'POST', body: { username, type } })
+        scanId = r.scanId
+      } catch (e) {
+        resolve({ error: e.message })
+        return
+      }
+
+      const es = new EventSource(`${SERVER_URL}/api/scan/${scanId}/stream`)
+
+      es.addEventListener('progress', (e) => {
+        if (progressCallback) progressCallback(JSON.parse(e.data))
+      })
+
+      es.addEventListener('done', (e) => {
+        es.close()
+        resolve(JSON.parse(e.data))
+      })
+
+      es.addEventListener('scan_error', (e) => {
+        es.close()
+        resolve({ error: JSON.parse(e.data).error })
+      })
+
+      es.onerror = () => {
+        es.close()
+        resolve({ error: 'Lost connection to scan server.' })
+      }
+    })
+  }
+
+  return {
+    meta: {
+      platform: 'server',
+      capabilities: { automatedScan: true, unfollow: true },
+    },
+
+    accounts: {
+      async list() { return apiFetch('/api/accounts') },
+      async create(username) { return apiFetch('/api/accounts', { method: 'POST', body: { username } }) },
+      async delete(id) { return apiFetch(`/api/accounts/${id}`, { method: 'DELETE' }) },
+    },
+
+    snapshots: {
+      async list(accountId) { return apiFetch(`/api/snapshots?accountId=${accountId}`) },
+      async save({ accountId, type, usernames }) {
+        return apiFetch('/api/snapshots', { method: 'POST', body: { accountId, type, usernames } })
+      },
+      async members(snapshotId) { return apiFetch(`/api/snapshots/${snapshotId}/members`) },
+      async diff({ fromId, toId, accountId, type }) {
+        return apiFetch('/api/snapshots/diff', { method: 'POST', body: { fromId, toId, accountId, type } })
+      },
+      async crossDiff({ followersSnapshotId, followingSnapshotId }) {
+        return apiFetch('/api/snapshots/crossdiff', { method: 'POST', body: { followersSnapshotId, followingSnapshotId } })
+      },
+    },
+
+    events: {
+      async list(accountId) { return apiFetch(`/api/events?accountId=${accountId}`) },
+    },
+
+    scan: {
+      onProgress(cb) { progressCallback = cb },
+      offProgress() { progressCallback = null },
+      async followers({ username }) { return runScan({ username, type: 'followers' }) },
+      async following({ username }) { return runScan({ username, type: 'following' }) },
+    },
+
+    relations: {
+      async unfollow() {
+        return { error: 'Unfollow is not yet supported in the web server mode.' }
+      },
+    },
+
+    export: {
+      async csv({ snapshotId, filename }) {
+        const url = `${SERVER_URL}/api/export/csv/${snapshotId}`
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        link.click()
+        return { saved: true, filePath: filename }
+      },
+    },
+
+    shell: {
+      async openExternal(url) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        return { opened: true }
+      },
+    },
+  }
+}
+
+// ─── WEB (LOCALSTORAGE) API ──────────────────────────────────────────────────
 function defaultState() {
   return {
-    nextIds: {
-      account: 1,
-      snapshot: 1,
-      event: 1,
-    },
+    nextIds: { account: 1, snapshot: 1, event: 1 },
     accounts: [],
     snapshots: [],
     events: [],
@@ -23,10 +135,7 @@ function loadState() {
     return {
       ...defaultState(),
       ...parsed,
-      nextIds: {
-        ...defaultState().nextIds,
-        ...(parsed?.nextIds || {}),
-      },
+      nextIds: { ...defaultState().nextIds, ...(parsed?.nextIds || {}) },
     }
   } catch {
     return defaultState()
@@ -55,18 +164,11 @@ function sortByDateDesc(items, key) {
 }
 
 function normalizeUsername(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^@/, '')
-    .toLowerCase()
+  return String(value || '').trim().replace(/^@/, '').toLowerCase()
 }
 
 function normalizeUsernames(values) {
-  return [...new Set(
-    values
-      .map(normalizeUsername)
-      .filter(Boolean)
-  )]
+  return [...new Set(values.map(normalizeUsername).filter(Boolean))]
 }
 
 function getSnapshot(state, snapshotId) {
@@ -95,10 +197,7 @@ function createWebApi() {
   return {
     meta: {
       platform: 'web',
-      capabilities: {
-        automatedScan: false,
-        unfollow: false,
-      },
+      capabilities: { automatedScan: false, unfollow: false },
     },
 
     accounts: {
@@ -107,23 +206,16 @@ function createWebApi() {
           .slice()
           .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
       },
-
       async create(username) {
         return withState(state => {
           const normalized = normalizeUsername(username)
           const existing = state.accounts.find(account => account.username === normalized)
           if (existing) return existing
-
-          const account = {
-            id: nextId(state, 'account'),
-            username: normalized,
-            createdAt: getAppTimestamp(),
-          }
+          const account = { id: nextId(state, 'account'), username: normalized, createdAt: getAppTimestamp() }
           state.accounts.push(account)
           return account
         })
       },
-
       async delete(id) {
         withState(state => {
           state.accounts = state.accounts.filter(account => account.id !== id)
@@ -141,7 +233,6 @@ function createWebApi() {
           'takenAt'
         ).slice(0, 30)
       },
-
       async save({ accountId, type, usernames }) {
         return withState(state => {
           const normalizedUsernames = normalizeUsernames(usernames)
@@ -157,11 +248,9 @@ function createWebApi() {
           return snapshot
         })
       },
-
       async members(snapshotId) {
         return [...(getSnapshot(loadState(), snapshotId)?.usernames || [])]
       },
-
       async diff({ fromId, toId, accountId, type }) {
         return withState(state => {
           const fromSet = snapshotSet(state, fromId)
@@ -175,40 +264,15 @@ function createWebApi() {
           state.events = state.events.filter(event =>
             !(event.accountId === accountId && event.fromSnapshotId === fromId && event.toSnapshotId === toId)
           )
-
           for (const username of gained) {
-            state.events.push({
-              id: nextId(state, 'event'),
-              accountId,
-              eventType: gainedType,
-              username,
-              fromSnapshotId: fromId,
-              toSnapshotId: toId,
-              createdAt,
-            })
+            state.events.push({ id: nextId(state, 'event'), accountId, eventType: gainedType, username, fromSnapshotId: fromId, toSnapshotId: toId, createdAt })
           }
-
           for (const username of lost) {
-            state.events.push({
-              id: nextId(state, 'event'),
-              accountId,
-              eventType: lostType,
-              username,
-              fromSnapshotId: fromId,
-              toSnapshotId: toId,
-              createdAt,
-            })
+            state.events.push({ id: nextId(state, 'event'), accountId, eventType: lostType, username, fromSnapshotId: fromId, toSnapshotId: toId, createdAt })
           }
-
-          return {
-            gained,
-            lost,
-            gainedCount: gained.length,
-            lostCount: lost.length,
-          }
+          return { gained, lost, gainedCount: gained.length, lostCount: lost.length }
         })
       },
-
       async crossDiff({ followersSnapshotId, followingSnapshotId }) {
         const state = loadState()
         const followers = snapshotSet(state, followersSnapshotId)
@@ -231,26 +295,15 @@ function createWebApi() {
     },
 
     scan: {
-      async launch() {
-        return { error: 'Automated Instagram scanning is only available in the desktop app.' }
-      },
-
-      async followers() {
-        return { error: 'Automated Instagram scanning is only available in the desktop app.' }
-      },
-
-      async following() {
-        return { error: 'Automated Instagram scanning is only available in the desktop app.' }
-      },
-
+      async launch() { return { error: 'Automated scanning requires running the companion server.' } },
+      async followers() { return { error: 'Automated scanning requires running the companion server.' } },
+      async following() { return { error: 'Automated scanning requires running the companion server.' } },
       onProgress() {},
       offProgress() {},
     },
 
     relations: {
-      async unfollow() {
-        return { error: 'Unfollow actions are only available in the desktop app.' }
-      },
+      async unfollow() { return { error: 'Unfollow actions are only available in the desktop app or via the companion server.' } },
     },
 
     export: {
@@ -270,10 +323,24 @@ function createWebApi() {
   }
 }
 
-export function ensureApi() {
+// ─── BOOTSTRAP ───────────────────────────────────────────────────────────────
+export async function ensureApi() {
   if (typeof window === 'undefined') return null
-  if (!window.api) {
-    window.api = createWebApi()
-  }
+  if (window.api) return window.api // already set by Electron preload
+
+  // Probe for the local companion server
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 1500)
+    const res = await fetch(`${SERVER_URL}/api/ping`, { signal: controller.signal })
+    clearTimeout(timeout)
+    if (res.ok) {
+      window.api = createServerApi()
+      return window.api
+    }
+  } catch (_) {}
+
+  // Fall back to localStorage-only web mode
+  window.api = createWebApi()
   return window.api
 }
