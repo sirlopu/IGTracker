@@ -147,57 +147,63 @@ function copyChromeSession(srcProfile, destDir) {
   }
 }
 
+// Session dir used for a given sessionId — consistent between login and scan.
+function sessionDir(sessionId) {
+  return path.join(SESSIONS_DIR, `ig_${sessionId}`)
+}
+
 async function withInstagramPage(sessionId, task) {
   const { chromium } = require('playwright')
+  const dir = sessionDir(sessionId)
+  const isNew = !fs.existsSync(dir) || fs.readdirSync(dir).filter(f => !f.startsWith('.')).length === 0
 
-  // ── Prefer user's Chrome profile (already logged in, no setup needed) ────
-  const srcProfile = findChromeProfile()
-  if (srcProfile) {
-    const sessionDir = path.join(SESSIONS_DIR, `chrome_${sessionId}`)
-    try {
-      copyChromeSession(srcProfile, sessionDir)
-      // Remove stale lock files from the copy
-      for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
-        const p = path.join(sessionDir, lock)
-        try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
-      }
-      let ctx = null
-      try {
-        ctx = await chromium.launchPersistentContext(sessionDir, {
-          channel: 'chrome',          // actual Chrome binary — same Keychain key → cookies decrypt
-          headless: false,
-          args: ['--no-first-run', '--no-default-browser-check', '--no-sandbox'],
-        })
-        const page = ctx.pages()[0] || await ctx.newPage()
-        console.log('[browser] launched Chrome with profile copy')
-        return await task(page)
-      } finally {
-        try { if (ctx) await ctx.close() } catch (_) {}
-      }
-    } catch (e) {
-      console.log('[browser] Chrome profile launch failed:', e.message, '— falling back to Playwright Chromium')
+  if (isNew) {
+    // Bootstrap from Chrome profile on first use — subsequent runs reuse the saved session
+    const srcProfile = findChromeProfile()
+    if (srcProfile) {
+      console.log('[browser] bootstrapping session from Chrome profile')
+      copyChromeSession(srcProfile, dir)
+    } else {
+      fs.mkdirSync(dir, { recursive: true })
     }
+  } else {
+    console.log('[browser] reusing saved session for', sessionId)
   }
 
-  // ── Fallback: Playwright's own Chromium with a persistent session ─────────
-  console.log('[browser] using Playwright Chromium')
-  const sessionPath = path.join(SESSIONS_DIR, `pw_${sessionId}`)
-  fs.mkdirSync(sessionPath, { recursive: true })
+  // Remove stale lock files so Chrome can open the profile
   for (const lock of ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']) {
-    const p = path.join(sessionPath, lock)
+    const p = path.join(dir, lock)
     try { if (fs.existsSync(p)) fs.unlinkSync(p) } catch (_) {}
   }
+
   let ctx = null
   try {
-    ctx = await chromium.launchPersistentContext(sessionPath, {
+    ctx = await chromium.launchPersistentContext(dir, {
+      channel: 'chrome',
       headless: false,
-      viewport: { width: 1080, height: 900 },
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: ['--no-first-run', '--no-default-browser-check', '--no-sandbox'],
     })
     const page = ctx.pages()[0] || await ctx.newPage()
     return await task(page)
   } catch (e) {
-    console.error('Playwright error:', e.message)
+    if (e.message.includes('channel') || e.message.includes('chrome')) {
+      // Chrome not installed — fall back to Playwright's own Chromium
+      console.log('[browser] Chrome channel unavailable, falling back to Playwright Chromium:', e.message)
+      if (ctx) try { await ctx.close() } catch (_) {}
+      ctx = null
+      try {
+        ctx = await chromium.launchPersistentContext(dir, {
+          headless: false,
+          viewport: { width: 1080, height: 900 },
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        })
+        const page = ctx.pages()[0] || await ctx.newPage()
+        return await task(page)
+      } catch (e2) {
+        return { error: e2.message }
+      }
+    }
+    console.error('Browser error:', e.message)
     return { error: e.message }
   } finally {
     try { if (ctx) await ctx.close() } catch (_) {}
@@ -363,9 +369,16 @@ async function paginateFriendships(page, userId, type, onProgress) {
     }, `${endpoint}${qs}`)
 
     if (result?.__error) {
+      console.error(`[paginate] page ${pageNum} error: ${result.__error} (HTTP ${result.__status || '?'})`)
       if (result.__status === 429) await page.waitForTimeout(8000)
       consecutiveErrors++
-      if (consecutiveErrors >= 3) break
+      if (consecutiveErrors >= 3) {
+        if (seen.size === 0) {
+          // Never got anything — surface the error
+          throw new Error(`Instagram API error: ${result.__error}. Your session may have expired — try reconnecting your account.`)
+        }
+        break
+      }
       continue
     }
 
@@ -465,14 +478,15 @@ async function executeLoginJob(jobId, job) {
     if (result.error) {
       send('login_error', { error: result.error })
     } else {
-      // Move temp session to the username-keyed session directory
-      const tempPath = path.join(SESSIONS_DIR, `session__login_${jobId}`)
-      const userPath = path.join(SESSIONS_DIR, `session_${result.username}`)
-      if (fs.existsSync(tempPath)) {
-        if (!fs.existsSync(userPath)) {
-          fs.renameSync(tempPath, userPath)
+      // Rename the temp login session to the username-keyed session so scans reuse it
+      const tempDir = sessionDir(tempSessionId)
+      const userDir = sessionDir(result.username)
+      if (fs.existsSync(tempDir) && tempDir !== userDir) {
+        if (!fs.existsSync(userDir)) {
+          fs.renameSync(tempDir, userDir)
+          console.log('[login] session saved as', userDir)
         } else {
-          fs.rmSync(tempPath, { recursive: true, force: true })
+          fs.rmSync(tempDir, { recursive: true, force: true })
         }
       }
 
